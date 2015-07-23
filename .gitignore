@@ -1,3 +1,8 @@
+# Editor temp files
+*.swp
+.*~
+*.bak
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -56,4 +61,5 @@ docs/_build/
 # PyBuilder
 target/
 
+# OSX crud
 .DS_Store
