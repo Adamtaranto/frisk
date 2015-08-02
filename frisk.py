@@ -28,14 +28,17 @@
 
 import argparse
 import array
+from collections import Counter
 import copy
 import gzip
 import logging
 import math
 import numpy as np
+from operator import itemgetter
 import os
 import os.path
 import pickle
+import pybedtools
 import matplotlib.pyplot as plt
 import rpy2
 #import subprocess
@@ -43,7 +46,6 @@ import sys
 #import shutil
 #import threading
 #import traceback
-from collections import Counter
 
 #######################
 #######################
@@ -51,7 +53,7 @@ from collections import Counter
 #######################
 #######################
 
-FREAKSEQ_VERSION = '0.0.1'
+FRISK_VERSION = '0.0.1'
 
 #SYMB_TESTING  = SYMB_NAME + '_testing.fasta'
 #BINARIES_DIR  = 'binaries'
@@ -170,7 +172,6 @@ def crawlGenome(args, querySeq):
 		nSeqs += 1
 	logging.info('Successfully processed sequences: %s' % nSeqs)
 
-
 def prepareMaps(k, maxk, kmers):
 	"""Prepares the kmer maps for the specified kmer length"""
 	if k == maxk:
@@ -286,7 +287,6 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
 
 	genomeSpace = GenomeKmers[klen]['totalLen'] - (GenomeKmers[klen+1]['exMax'] * klen)
 	windowSpace = windowKmers[klen]['totalLen'] - (windowKmers[klen+1]['exMax'] * klen)
-	
 
 	sumWindowIVOM = 0
 	subKmers = dict()
@@ -366,7 +366,6 @@ def KLI(GenomeIVOM, windowIVOM,args):
 #calculates relative entropy (Kullback-Leibler)
 #IVOM structure: dict[kmer][IVOM Score]
 	windowKLI = 0
-	absKLI = args.absoluteKLI
 	for k in windowIVOM:
 		w = float(windowIVOM[k])
 		G = float(GenomeIVOM[k])
@@ -377,76 +376,11 @@ def KLI(GenomeIVOM, windowIVOM,args):
 		#Positive number indicates enriched in window relative to genome
 		#Magnitude of KLI reflects degree of difference
 		#Note: Using log2 instead of log10 to accentuate variance within small range.
-		if absKLI:
+		if args.absoluteKLI:
 			windowKLI += (w*abs(math.log((w/G),2)))
 		else:
 			windowKLI += (w*math.log((w/G),2))
 	return windowKLI
-
-def mainArgs():
-	"""Process command-line arguments"""
-
-	parser = argparse.ArgumentParser(description='Calculate all kmers in a given sequence')
-
-	parser.add_argument('-H',
-						'--hostSeq',
-						type=str,
-						help='The input host sequences (single species)')
-	parser.add_argument('-Q',
-						'--querySeq',
-						type=str,
-						default=None,
-						help='Defaults to hostseq, else user provided query genome for comparison to host')
-	parser.add_argument('-O',
-						'--outfile',
-						type=str,
-						help='Write KLI-IVOM Wiggle track to this file')	
-	parser.add_argument('-A',
-						'--absoluteKLI',
-						action='store_true',
-						default=False,
-						help='Calculate absolute value of KLI for each window. Default False, will report net KLI movement.')
-	parser.add_argument('-R',
-						'--recalc',
-						action='store_false',
-						default=True,
-						help='Force recalculation of reference sequence kmer counts. Default uses counts from previous run.')
-	parser.add_argument('-s',
-						'--scaffoldsAll',
-						action='store_true',
-						default=False,
-						help='If genomic scaffold is below minimum window size, process whole scaffold as single window.')
-	parser.add_argument('-c',
-						'--minWordSize',
-						type=int,
-						default='1',
-						help='Minimum value of DNA word length')
-	parser.add_argument('-k',
-						'--maxWordSize',
-						type=int,
-						default='8',
-						help='Maxmimum value of DNA word length')
-	parser.add_argument('-w',
-						'--windowlen',
-						type=int,
-						default='5000',
-						help='Lenght of survey window')
-	parser.add_argument('-i',
-						'--increment',
-						type=int,
-						default='2500',
-						help='Slide survey window by this increment')
-	parser.add_argument('-t',
-						'--tempDir',
-						type=str,
-						default='temp',
-						help='Name of temporary directory')
-	
-	args = parser.parse_args()
-	if args.minWordSize > args.maxWordSize:
-		logging.error('[ERROR] Minimum kmer size (-c/--minKmerSize) must be less than Maximum kmer size (-k/--maxKmerSize)\n')
-		sys.exit(1)
-	return args
 
 def makePicklePath(args,path):
 	#Note: need to add kmer range to filename
@@ -454,11 +388,6 @@ def makePicklePath(args,path):
 	pickleOut = os.path.join(args.tempDir,pathbase + "_" + str(args.minWordSize) + "_" + str(args.maxWordSize) + '.p')
 	return pickleOut
 
-#def makeKmerList(computedKmers):
-#	kdictRange = len(computedKmers) - 2
-#	for k in range(0,kdictRange):
-#		for kmers in comput
-#	return kmerList
 
 def FDBins(data):
 	#Freedman-Diaconis method for calculating optimal number of bins for dataset
@@ -495,6 +424,165 @@ def otsu(data,fd):
 	otsuNum = binEdges[thresh] * max(abs(raw)) * -1.0
 	return otsuNum
 
+def otsu_CP(data, bins):
+	"""Compute a threshold using Otsu's method
+	data           - an array of intensity values between zero and one
+	bins           - we bin the data into this many equally-spaced bins, then pick
+					 the bin index that optimizes the metric
+	"""
+	data = np.atleast_1d(data)
+	data = data[~ np.isnan(data)]
+	data.sort()
+
+	var = running_variance(data)
+	rvar = np.flipud(running_variance(np.flipud(data)))
+	thresholds = data[1:len(data):len(data)/bins]
+	score_low = (var[0:len(data)-1:len(data)/bins] * np.arange(0,len(data)-1,len(data)/bins))
+	score_high = (rvar[1:len(data):len(data)/bins] * (len(data) - np.arange(1,len(data),len(data)/bins)))
+	scores = score_low + score_high
+
+	if len(scores) == 0:
+		return thresholds[0]
+	index = np.argwhere(scores == scores.min()).flatten()
+	if len(index)==0:
+		return thresholds[0]
+	index = index[0]
+
+	# Take the average of the thresholds to either side of
+	# the chosen value to get an intermediate in cases where there is
+	# a steep step between the background and foreground
+	
+	if index == 0:
+		index_low = 0
+	else:
+		index_low = index-1
+	if index == len(thresholds)-1:
+		index_high = len(thresholds)-1
+	else:
+		index_high = index+1 
+	#Note: Need to restore scaled data to negative log data 
+	return (thresholds[index_low]+thresholds[index_high]) / 2
+
+
+def running_variance(x):
+	n = len(x)
+	m = x.cumsum() / np.arange(1,n+1)
+	x_minus_mprev = x[1:]-m[:-1]
+	x_minus_m = x[1:]-m[1:]
+	s = (x_minus_mprev*x_minus_m).cumsum()
+	var = s / np.arange(2,n+1)
+	return np.hstack(([0],var))
+
+def gffFilter(rec, **kwargs):
+	if 'feature' in kwargs.keys():
+		if rec[2] in kwargs['feature']:
+			return rec
+	else:
+		return rec
+
+def anomalie2GFF(anomBED):
+	n = 0
+	for i in anomBED:
+		yield [str(i[0]), str(i[1]),str(i[2]), ';'.join('ID=Anomalie_'+ str(n).zfill(8), 'maxKLI='+ str(i[3]),'minKLI='+ str(i[4]),'meanKLI='+ str(i[5]))]
+		n += 1
+
+def mainArgs():
+	"""Process command-line arguments"""
+
+	parser = argparse.ArgumentParser(description='Calculate all kmers in a given sequence')
+
+	parser.add_argument('-H',
+						'--hostSeq',
+						type=str,
+						required=True,
+						help='The input host sequences (single species)')
+	parser.add_argument('-Q',
+						'--querySeq',
+						type=str,
+						default=None,
+						help='Detect anomolous regions in this sequence by comparison to hostSeq. Defaults to hostSeq.')
+	parser.add_argument('-O',
+						'--outfile',
+						type=str,
+						help='Write KLI-IVOM bed track to this file')	
+	parser.add_argument('-A',
+						'--absoluteKLI',
+						action='store_true',
+						default=False,
+						help='Calculate absolute value of KLI for each window. Default False, will report net KLI movement.')
+	parser.add_argument('-R',
+						'--recalc',
+						action='store_false',
+						default=True,
+						help='Force recalculation of reference sequence kmer counts. Default uses counts from previous run.')
+	parser.add_argument('-s',
+						'--scaffoldsAll',
+						action='store_true',
+						default=False,
+						help='If genomic scaffold is below minimum window size, process whole scaffold as single window.')
+	parser.add_argument('-m',
+						'--minWordSize',
+						type=int,
+						default='1',
+						help='Minimum value of DNA word length')
+	parser.add_argument('-k',
+						'--maxWordSize',
+						type=int,
+						default='8',
+						help='Maxmimum value of DNA word length')
+	parser.add_argument('-w',
+						'--windowlen',
+						type=int,
+						default='5000',
+						help='Lenght of survey window')
+	parser.add_argument('-i',
+						'--increment',
+						type=int,
+						default='2500',
+						help='Slide survey window by this increment')
+	parser.add_argument('-t',
+						'--tempDir',
+						type=str,
+						default='temp',
+						help='Name of temporary directory')
+	parser.add_argument('-g',
+						'--gffPath',
+						type=str,
+						default=None,
+						help='Path to GFF file with annotations for genome being frisked.')
+	parser.add_argument('-r',
+						'--gffRange',
+						type=int,
+						default=0,
+						help='Report gff annotations within window of anomolous k-chores')
+	parser.add_argument('-f',
+						'--gffFeatures',
+						type=str,
+						default=None,
+						nargs='+',
+						help='Space delimited list of feature types to report from gff')
+	parser.add_argument('-p',
+						'--runProjection',
+						default=None,
+						choices=[None, 'PCA2', 'PCA3', 'MDS2', 'MDS3', 'D2' ],
+						help='Project anomolous windows into multidimensional space.')
+	parser.add_argument('-c',
+						'--culster',
+						default=None,
+						choices=[None, 'DBSCAN', 'KMEANS', ],
+						help='Attempt clustering of windows.')
+	parser.add_argument('-n',
+						'--spikeNormal',
+						action=store_true,
+						default=False,
+						help='Include a sampling of windows from the centre of the self population.')
+	
+	args = parser.parse_args()
+	if args.minWordSize > args.maxWordSize:
+		logging.error('[ERROR] Minimum kmer size (-c/--minKmerSize) must be less than Maximum kmer size (-k/--maxKmerSize)\n')
+		sys.exit(1)
+	return args
+
 def main():
 	#Test params
 	#freakSeq.py --hostSeq zymoChr_1_2.fasta --outfile test_zymo.bed --minWordSize 1 --maxWordSize 8 --tempDir temp
@@ -525,15 +613,12 @@ def main():
 	outPath = os.path.join(args.tempDir,out)
 	handle  = open(outPath, "w")
 
-	#Initialise window kmer list, and lable list
-	winKdata = []
-	winKlables = []
+	allWindows = list()
 
+	#First pass to get all window KLI scores
 	for seq,name,start,stop in crawlGenome(args, querySeq):
 		target = [(name,seq)]
 		windowKmers = computeKmers(args, None, None, target, False, blankMap)
-		#winKmerList = makeKmerList()
-		#winKdata.append(winKmerList)
 		lableString = [name, str(start), str(stop)]
 		winKlables.append('-'.join(lableString))
 		GenomeIVOM = IvomBuild(windowKmers, args, genomeKmers, True)
@@ -542,18 +627,21 @@ def main():
 		outString = [name, str(start), str(stop), str(windowKLI)]
 		handle.write('\t'.join(outString) + '\n')
 		print('\t'.join(outString))
+		allWindows.append((name,start,stop,windowKLI))#Mind that KLI does not get stored as scientific notation
 
-	#Note: Need to mod above loop to store KLI from each window into an array 'allKLI'
-	#Log10 transfor to get normal distribution
-	##logKLI = np.log10(allKLI)
-	
-	#Calculate optimal number of bins for logKLI set
-	##fd = FDBins(logKLI)
+	handle.close()
+
+	#Find optimal threshold
+	logging.info('Finding optimal threshold.')
+	allKLI = [x[3] for x in allWindows]
+	logKLI = np.log10(allKLI)
+	fd = FDBins(logKLI)#Calculate optimal number of bins for logKLI set using Freedman-Diaconnis method.
 	
 	#Use Otsu binarization to calc optimal log10 threshold for weird KLI scores
 	#Note: Need to add option for users to manually set a theshold value
-	##otsuNum = otsu(logKLI,fd)
+	otsuNum = otsu(logKLI,fd)
 	
+	#Note: Add function to export histogram to file
 	#Run these to check otsu threshold is in a sensible spot
 	#hist,binEdges = np.histogram(logKLI,bins=30)
 	#plt.bar(binEdges[:-1], hist, width = 0.1)
@@ -561,9 +649,53 @@ def main():
 	#plt.xlim(min(binEdges), max(binEdges))
 	#plt.show()
 
+	#Thresholding windows
+	#Note: make this a function: def thresholdList
+	tItems = [t for t in allWindows if np.log10(t[3]) >= otsuNum]
+	sItems = sorted(tItems, key=itemgetter(0,1,2))
+	anomaliesBED = pybedtools.BedTool(sItems)
+	anomalies = anomaliesBED.merge(d=50, c='4,4,4', o='max,min,mean')
+
+	#Note: Need arg for path to GFF outfile
+	handle  = open(PathAnomGFF, "w")
+	handle.write('\t'.join(anomalie2GFF(anomalies)) + '\n')
+	handle.close()
+	
+	#If a gff3 annotation is provided 
+	if args.gffPath:
+		gffOutname = os.path.join(args.tempDir, "featuresInAnomalies_" + os.path.basename(args.gffPath))
+		features = pybedtools.BedTool(args.gffPath).each(gffFilter, feature=args.gffFeatures)
+		extractedFeatures = features.window(b=anomalies, w=args.gffRange, u=True)
+		if len(extractedFeatures) > 0:
+			extractedFeatures.saveas(gffOutname)
+		else:
+			logging.info('No features from %s detected within %s bases of anomalies' % (args.gffPath, str(args.gffRange)))
+
+	##Next:
+	'''	1) 	For windows coords extract 
+
+		2)	for given sequence get kmer counts 
+			and normalise to window len. return object.
+
+		3)	Run projection (PCA, MDS). Save image. (figure out how to save images!)
+
+		4)	Driving Kmer report. 
+			For subset of windows rank kmers by mean IKW-KLI, print as report.
+
+		5)	Save plt image to file. 
+			
+		6)	Run clustering on Projection. (DBSCAN, other methods)
+
+		7)	Function to extract super normal windows to spike PCA.
+
+		8)	Report coords for anomalies with category lable in type.
+
+		9) 	Calculate and mask N-blocks from final merged anoms.
+	'''
+
 	# Trace
 	logging.info('Finished!')
-	handle.close()
+	
 
 if __name__ == '__main__':
 	main()
