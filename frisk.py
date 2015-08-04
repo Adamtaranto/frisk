@@ -142,7 +142,7 @@ def crawlGenome(args, querySeq):
 				winExclude += 1
 				continue
 			else:
-				logging.info('Rescued small scaffold %s' % name)
+				logging.info('Rescuing small scaffold %s' % name)
 				yield (seq, name, 0, size)
 				windowCount += 1
 				nSeqs += 1
@@ -382,12 +382,11 @@ def KLI(GenomeIVOM, windowIVOM,args):
 			windowKLI += (w*math.log((w/G),2))
 	return windowKLI
 
-def makePicklePath(args,path):
+def makePicklePath(args,space):
 	#Note: need to add kmer range to filename
-	pathbase = os.path.basename(path)
-	pickleOut = os.path.join(args.tempDir,pathbase + "_" + str(args.minWordSize) + "_" + str(args.maxWordSize) + '.p')
+	pathbase = os.path.basename(args.hostSeq)
+	pickleOut = os.path.join(args.tempDir,pathbase + "_" + str(args.minWordSize) + "_" + str(args.maxWordSize) + "_" + space + '.p')
 	return pickleOut
-
 
 def FDBins(data):
 	#Freedman-Diaconis method for calculating optimal number of bins for dataset
@@ -421,6 +420,8 @@ def otsu(data,fd):
 		if fn < fn_min:
 			fn_min = fn
 			thresh = i
+	logging.info('OTSU selected bin %s as threshold position' % str(thresh))
+	#Convert bact to log10(KLI)
 	otsuNum = binEdges[thresh] * max(abs(raw)) * -1.0
 	return otsuNum
 
@@ -480,11 +481,25 @@ def gffFilter(rec, **kwargs):
 	else:
 		return rec
 
-def anomalie2GFF(anomBED):
-	n = 0
+def anomaly2GFF(anomBED, **kwargs):
+	n = 1
+	if 'category' in kwargs.keys():
+		annotType = kwargs['category']
+	else:	
+		annotType = 'Kmer-anomaly'
 	for i in anomBED:
-		yield [str(i[0]), str(i[1]),str(i[2]), ';'.join('ID=Anomalie_'+ str(n).zfill(8), 'maxKLI='+ str(i[3]),'minKLI='+ str(i[4]),'meanKLI='+ str(i[5]))]
+		content = [str(i[0]),'frisk_' + FRISK_VERSION, annotType, str(i[1]),str(i[2]), '.', '+', '.', ';'.join(['ID=Anomaly_'+ str(n).zfill(8), 'maxKLI='+ str(i[3]),'minKLI='+ str(i[4]),'meanKLI='+ str(i[5])])]
+		if n == 1:
+			yield '##gff-version 3' + '\n'
+		yield '\t'.join(content) + '\n'
 		n += 1
+
+def thresholdList(intervalList,threshold):
+	tItems = [t for t in intervalList if np.log10(t[3]) >= threshold]
+	sItems = sorted(tItems, key=itemgetter(0,1,2))
+	anomaliesBED = pybedtools.BedTool(sItems)
+	anomalies = anomaliesBED.merge(d=0, c='4,4,4', o='max,min,mean')
+	return anomalies
 
 def mainArgs():
 	"""Process command-line arguments"""
@@ -500,26 +515,34 @@ def mainArgs():
 						'--querySeq',
 						type=str,
 						default=None,
-						help='Detect anomolous regions in this sequence by comparison to hostSeq. Defaults to hostSeq.')
+						help='Detect anomalous regions in this sequence by comparison \
+						to hostSeq. Defaults to hostSeq.')
 	parser.add_argument('-O',
 						'--outfile',
 						type=str,
-						help='Write KLI-IVOM bed track to this file')	
+						help='Write KLI-IVOM bed track to this file')
+	parser.add_argument('-G',
+						'--gffOutfile',
+						type=str,
+						help='Write merged anomaly annotations to gff3.')
 	parser.add_argument('-A',
 						'--absoluteKLI',
 						action='store_true',
 						default=False,
-						help='Calculate absolute value of KLI for each window. Default False, will report net KLI movement.')
+						help='Calculate absolute value of KLI for each window. \
+						Default False, will report net KLI movement.')
 	parser.add_argument('-R',
 						'--recalc',
 						action='store_false',
 						default=True,
-						help='Force recalculation of reference sequence kmer counts. Default uses counts from previous run.')
+						help='Force recalculation of reference sequence kmer counts if set. \
+						Default uses counts from previous run.')
 	parser.add_argument('-s',
 						'--scaffoldsAll',
 						action='store_true',
 						default=False,
-						help='If genomic scaffold is below minimum window size, process whole scaffold as single window.')
+						help='If genomic scaffold is below minimum window size, process \
+						whole scaffold as single window.')
 	parser.add_argument('-m',
 						'--minWordSize',
 						type=int,
@@ -554,7 +577,7 @@ def mainArgs():
 						'--gffRange',
 						type=int,
 						default=0,
-						help='Report gff annotations within window of anomolous k-chores')
+						help='Report gff annotations within window of anomalous k-chores')
 	parser.add_argument('-f',
 						'--gffFeatures',
 						type=str,
@@ -565,7 +588,7 @@ def mainArgs():
 						'--runProjection',
 						default=None,
 						choices=[None, 'PCA2', 'PCA3', 'MDS2', 'MDS3', 'D2' ],
-						help='Project anomolous windows into multidimensional space.')
+						help='Project anomalous windows into multidimensional space.')
 	parser.add_argument('-c',
 						'--culster',
 						default=None,
@@ -573,10 +596,20 @@ def mainArgs():
 						help='Attempt clustering of windows.')
 	parser.add_argument('-n',
 						'--spikeNormal',
-						action=store_true,
+						action='store_true',
 						default=False,
 						help='Include a sampling of windows from the centre of the self population.')
-	
+	parser.add_argument('-F',
+						'--forceThresholdKLI',
+						default=None,
+						help='KLI score above which a window will be considered anomalous. \
+						Note: Give as raw KLI, not log10(KLI).')
+	parser.add_argument('-E',
+						'--exitAfter',
+						default=None,
+						choices=[None, 'GenomeKmers'],
+						help='Exit after completing task.')
+
 	args = parser.parse_args()
 	if args.minWordSize > args.maxWordSize:
 		logging.error('[ERROR] Minimum kmer size (-c/--minKmerSize) must be less than Maximum kmer size (-k/--maxKmerSize)\n')
@@ -590,7 +623,7 @@ def main():
 	logging.basicConfig(level=logging.INFO, format=("%(asctime)s - %(funcName)s - %(message)s"))
 	args = mainArgs()
 	path = args.hostSeq
-	genomepickle = makePicklePath(args,path)
+	genomepickle = makePicklePath(args, 'genome')
 
 	if not args.querySeq:
 		querySeq = args.hostSeq
@@ -605,10 +638,15 @@ def main():
 		logging.info('Importing previously calculated genome kmers from %s' % genomepickle)
 		genomeKmers = pickle.load( open( genomepickle, "rb" ) )
 	else:
+		logging.info('Calculating kmers for host sequence: %' % args.hostSeq)
 		genomeKmers = computeKmers(args, path, genomepickle, None , True, blankMap)
-		#Note: add opt to quit after generating genome kmer object.
+		if args.exitAfter == 'GenomeKmers':
+			logging.info('Finished counting kmers. Exiting.')
+			sys.exit(0)
+		else:
+			logging.info('Finished counting kmers.')
 
-	# Initialise output
+	#Initialise output
 	out     = args.outfile
 	outPath = os.path.join(args.tempDir,out)
 	handle  = open(outPath, "w")
@@ -619,8 +657,6 @@ def main():
 	for seq,name,start,stop in crawlGenome(args, querySeq):
 		target = [(name,seq)]
 		windowKmers = computeKmers(args, None, None, target, False, blankMap)
-		lableString = [name, str(start), str(stop)]
-		winKlables.append('-'.join(lableString))
 		GenomeIVOM = IvomBuild(windowKmers, args, genomeKmers, True)
 		windowIVOM = IvomBuild(windowKmers, args, genomeKmers, False)
 		windowKLI = KLI(GenomeIVOM, windowIVOM,args)
@@ -631,59 +667,60 @@ def main():
 
 	handle.close()
 
-	#Find optimal threshold
+	windowsPickle = makePicklePath(args, 'windows')
+	pickle.dump(allWindows, open(windowsPickle, "wb"))
+
+	#Find optimal KLI threshold
 	logging.info('Finding optimal threshold.')
-	allKLI = [x[3] for x in allWindows]
-	logKLI = np.log10(allKLI)
-	fd = FDBins(logKLI)#Calculate optimal number of bins for logKLI set using Freedman-Diaconnis method.
-	
-	#Use Otsu binarization to calc optimal log10 threshold for weird KLI scores
-	#Note: Need to add option for users to manually set a theshold value
-	otsuNum = otsu(logKLI,fd)
-	
-	#Note: Add function to export histogram to file
-	#Run these to check otsu threshold is in a sensible spot
-	#hist,binEdges = np.histogram(logKLI,bins=30)
-	#plt.bar(binEdges[:-1], hist, width = 0.1)
-	#plt.axvline(otsuNum, color='r', linestyle='dashed', linewidth=2)
-	#plt.xlim(min(binEdges), max(binEdges))
-	#plt.show()
+	allKLI = [x[3] for x in allWindows] #Get KLI list
+	logKLI = np.log10(allKLI) #log10 transform
+	fd = FDBins(logKLI) #Calculate optimal number of bins for logKLI set using Freedman-Diaconnis method.
 
-	#Thresholding windows
-	#Note: make this a function: def thresholdList
-	tItems = [t for t in allWindows if np.log10(t[3]) >= otsuNum]
-	sItems = sorted(tItems, key=itemgetter(0,1,2))
-	anomaliesBED = pybedtools.BedTool(sItems)
-	anomalies = anomaliesBED.merge(d=50, c='4,4,4', o='max,min,mean')
+	#Set KLI threshold
+	if args.forceThresholdKLI:
+		KLIthreshold = np.log10(float(args.forceThresholdKLI))
+		logging.info('Forcing log10(KLI) threshold = %s' % str(KLIthreshold))
+	else:
+		#Use Otsu binarization to calc optimal log10 threshold for weird KLI scores
+		KLIthreshold = otsu(logKLI,fd)
+		logging.info('Optimal log10(KLI) threshold = %s' % str(KLIthreshold))
 
-	#Note: Need arg for path to GFF outfile
-	handle  = open(PathAnomGFF, "w")
-	handle.write('\t'.join(anomalie2GFF(anomalies)) + '\n')
+	#Threshold and merge anomalous features.
+	anomalies = thresholdList(allWindows,KLIthreshold)
+
+	handle  = open(os.path.join(args.tempDir,args.gffOutfile), "w")
+	for i in anomaly2GFF(anomalies):
+		handle.write(i)
 	handle.close()
 	
 	#If a gff3 annotation is provided 
+	#make function def findOverlaps(args, anomBED):
 	if args.gffPath:
+		#Change default name to be query centric, ok.
 		gffOutname = os.path.join(args.tempDir, "featuresInAnomalies_" + os.path.basename(args.gffPath))
 		features = pybedtools.BedTool(args.gffPath).each(gffFilter, feature=args.gffFeatures)
 		extractedFeatures = features.window(b=anomalies, w=args.gffRange, u=True)
 		if len(extractedFeatures) > 0:
 			extractedFeatures.saveas(gffOutname)
+			logging.info('Successfully extracted %s features from within %s of anomalies' % (str(len(extractedFeatures)), str(args.gffRange)))
 		else:
 			logging.info('No features from %s detected within %s bases of anomalies' % (args.gffPath, str(args.gffRange)))
 
 	##Next:
-	'''	1) 	For windows coords extract 
+	'''	1)	Save plt image to file. 
+		
+		2) 	For window-coords extract sequence
 
-		2)	for given sequence get kmer counts 
-			and normalise to window len. return object.
+		4) Add step-back to extract final window in scaffolds of odd length.
 
-		3)	Run projection (PCA, MDS). Save image. (figure out how to save images!)
+		3)	For given sequence, get kmer counts 
+			and normalise to window len. (rowname= ) Pickle object.
 
-		4)	Driving Kmer report. 
+		4)	Run projection (PCA, MDS). Save image. (figure out how to save images!)
+
+		5)	Driving Kmer report. 
 			For subset of windows rank kmers by mean IKW-KLI, print as report.
-
-		5)	Save plt image to file. 
-			
+	
 		6)	Run clustering on Projection. (DBSCAN, other methods)
 
 		7)	Function to extract super normal windows to spike PCA.
@@ -691,7 +728,12 @@ def main():
 		8)	Report coords for anomalies with category lable in type.
 
 		9) 	Calculate and mask N-blocks from final merged anoms.
+
+		10) Option to recycle KLI track previously calculated per scaffold >> continue to gff reports and PCA
 	'''
+
+	#Options to add:
+		#...
 
 	# Trace
 	logging.info('Finished!')
