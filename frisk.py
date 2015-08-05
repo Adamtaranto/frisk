@@ -332,7 +332,6 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
 					subKmers['w'][x] = GenomeKmers[x-1][subK] * 4^x
 					subKmers['p'][x] = float(GenomeKmers[x-1][subK]) / (genomeSpace * 2)
 
-
 		w_totals = 0
 		for w in subKmers['w']:
 			w_totals += subKmers['w'][w]
@@ -381,6 +380,25 @@ def KLI(GenomeIVOM, windowIVOM,args):
 		else:
 			windowKLI += (w*math.log((w/G),2))
 	return windowKLI
+
+def calcRIP(windowKmers):
+	#Product Index
+	if windowKmers[1]['AT'] > 0:
+		PI = windowKmers[1]['TA'] / float(windowKmers[1]['AT'])
+	else:
+		PI = None
+	#Substrate index
+	AC_GT = (windowKmers[1]['AC'] + windowKmers[1]['GT'])
+	if AC_GT > 0:
+		SI = (windowKmers[1]['CA'] + windowKmers[1]['TG']) / float(AC_GT)
+	else:
+		SI = None
+	#Composite RIP Index
+	if PI and SI:
+		CRI = PI - SI
+	else:
+		CRI = None
+	return (PI,SI,CRI)
 
 def makePicklePath(args,space):
 	#Note: need to add kmer range to filename
@@ -463,7 +481,6 @@ def otsu_CP(data, bins):
 		index_high = index+1 
 	#Note: Need to restore scaled data to negative log data 
 	return (thresholds[index_low]+thresholds[index_high]) / 2
-
 
 def running_variance(x):
 	n = len(x)
@@ -707,11 +724,14 @@ def main():
 			logging.info('No features from %s detected within %s bases of anomalies' % (args.gffPath, str(args.gffRange)))
 
 	##Next:
-	'''	1)	Save plt image to file. 
+	'''	1)	Save image to file [log10(KLI),PCA,PCA with clusters]. 
 		
-		2) 	For window-coords extract sequence
+		2) 	Def getSeq(coords): #Feed in list of tuples / bedTool object
+				for chr,start,stop in coords:
+		
+		3)	Calculate Composite RIP Index
 
-		4) Add step-back to extract final window in scaffolds of odd length.
+		4) 	Add step-back to extract final window in scaffolds of odd length.
 
 		3)	For given sequence, get kmer counts 
 			and normalise to window len. (rowname= ) Pickle object.
