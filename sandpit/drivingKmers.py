@@ -61,7 +61,6 @@ def dkReport(clusterID, kmerMeanVars, reportCap=100, outputFile):
 		negSorted = sort(neglist) #sort on abs(mean) then var ???
 		outfile.write(formatString(negSorted))
 
-
 def getPCACounts(seq, krange, args):
 	'''Take sequence and k-range. Generate counts normalised 
 	to number of kmers observed for each k.'''
@@ -87,7 +86,6 @@ def getPCACounts(seq, krange, args):
 			pcaData.append(kmer)
 
 	return pcaData
-
 
 
 def extractWindow(rangeList,fastaObject):

@@ -126,15 +126,15 @@ def crawlGenome(args, querySeq):
 	saveSmalls = args.scaffoldsAll
 	nSeqs = 0
 
-	# Iterate over scaffolds
+	#Iterate over scaffolds
 	for name,seq in iterFasta(querySeq):
-		
+		#Reset stats and counters
 		windowCount = 0
 		winExclude = 0
 		bases,nonbase = countN(seq)
 		size = len(seq)
-
-		#Process scaffolds that below window size + passable increment, as a single window.
+		jumpback = False
+		#Process scaffolds that below window size + minimum acceptable first increment, as a single window.
 		if size <= w + ((w * 0.75) - i) and saveSmalls:
 			scaffB,scaffN = countN(seq)
 			if scaffN >= 0.3 * size:
@@ -147,25 +147,26 @@ def crawlGenome(args, querySeq):
 				windowCount += 1
 				nSeqs += 1
 		else:
-			# Crawl sequence one base at a time (stop k bases from end)
+			#Crawl sequence in multiples of increment length until one increment from end of seq
 			for j in xrange(0, size - i + 1, i):
-				#Extract word of len i (kmer) starting at current base
-				winSeq = seq[j:j + w]
+				#If window overshoots sequence, jump back one w len from last base.
+				if j+w > size:
+					winSeq = seq[size - w: size]
+					jumpback = True
+				else:
+					#Extract window of len w starting at current base
+					winSeq = seq[j: j+w]
 				#Screen N content = (baseCount, Ncount)
 				winB,winN = countN(winSeq)
 				if winN >= 0.3 * len(winSeq):
+					logging.info('%s excluded as > 30 percent unresolved sequence.' % name)
 					winExclude += 1
 					continue
-				elif len(winSeq) == w:
-					yield (winSeq, name, j, j + w)
-				elif len(winSeq) >= 0.75 * w:
-					yield (winSeq, name, j, size)
+				elif jumpback:
+					yield (winSeq, name, size - w, size)
 				else:
-					winExclude += 1
-					continue
-
+					yield (winSeq, name, j+1, j + w)
 				windowCount += 1
-
 		#Iterate to next sequence in input fasta
 		logging.info('Extracted %s windows from %s bases in %s' % (windowCount,str(size),name))
 		logging.info('Excluded %s windows from %s' % (winExclude,name))
@@ -655,7 +656,7 @@ def main():
 		logging.info('Importing previously calculated genome kmers from %s' % genomepickle)
 		genomeKmers = pickle.load( open( genomepickle, "rb" ) )
 	else:
-		logging.info('Calculating kmers for host sequence: %' % args.hostSeq)
+		logging.info('Calculating kmers for host sequence: %s' % args.hostSeq)
 		genomeKmers = computeKmers(args, path, genomepickle, None , True, blankMap)
 		if args.exitAfter == 'GenomeKmers':
 			logging.info('Finished counting kmers. Exiting.')
@@ -671,7 +672,7 @@ def main():
 	allWindows = list()
 
 	#First pass to get all window KLI scores
-	for seq,name,start,stop in crawlGenome(args, querySeq):
+	for seq,name,start,stop in crawlGenome(args, querySeq): #note coords are inclusive i.e. 1:10 = 0:9 in string
 		target = [(name,seq)]
 		windowKmers = computeKmers(args, None, None, target, False, blankMap)
 		GenomeIVOM = IvomBuild(windowKmers, args, genomeKmers, True)
@@ -724,32 +725,30 @@ def main():
 			logging.info('No features from %s detected within %s bases of anomalies' % (args.gffPath, str(args.gffRange)))
 
 	##Next:
-	'''	1)	Save image to file [log10(KLI),PCA,PCA with clusters]. 
+	'''	1) 	Save image to file [log10(KLI),PCA,PCA with clusters]. 
+
+		2) 	Calculate and mask N-blocks from final merged anoms. (find continuous strings)
 		
-		2) 	Def getSeq(coords): #Feed in list of tuples / bedTool object
+		3) 	Def getSeq(coords): #Feed in list of tuples / bedTool object
 				for chr,start,stop in coords:
-		
-		3)	Calculate Composite RIP Index
 
-		4) 	Add step-back to extract final window in scaffolds of odd length.
-
-		3)	For given sequence, get kmer counts 
+		4)	For given sequence, get kmer counts 
 			and normalise to window len. (rowname= ) Pickle object.
-
-		4)	Run projection (PCA, MDS). Save image. (figure out how to save images!)
 
 		5)	Driving Kmer report. 
 			For subset of windows rank kmers by mean IKW-KLI, print as report.
+
+		6)	Run projection (PCA, MDS). Save image. (figure out how to save images!)
 	
-		6)	Run clustering on Projection. (DBSCAN, other methods)
+		7)	Run clustering on Projection. (DBSCAN, other methods)
 
-		7)	Function to extract super normal windows to spike PCA.
+		8)	Function to extract super normal windows to spike PCA.
 
-		8)	Report coords for anomalies with category lable in type.
-
-		9) 	Calculate and mask N-blocks from final merged anoms.
+		9)	Report coords for anomalies with category lable in type.
 
 		10) Option to recycle KLI track previously calculated per scaffold >> continue to gff reports and PCA
+
+		11)	Build RIP into output
 	'''
 
 	#Options to add:
