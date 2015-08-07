@@ -61,12 +61,25 @@ FRISK_VERSION = '0.0.1'
 LETTERS = ('A', 'T', 'G', 'C')
 
 def tempPathCheck(args):
-    """Check if the temporary folder exists, else creates it"""
+	"""Check if the temporary folder exists, else creates it"""
 
-    logging.info('Checking for temporary folder')
-    tempFolder = os.path.abspath(args.tempDir)
-    if not os.path.isdir(tempFolder):
-        os.makedirs(tempFolder)
+	logging.info('Checking for temporary folder')
+	tempFolder = os.path.abspath(args.tempDir)
+	if not os.path.isdir(tempFolder):
+		os.makedirs(tempFolder)
+
+def findBaseRanges(name, s, ch, minlen=0):
+	#For string return intervals of character longer than minimum length.
+	data = [i for i, ltr in enumerate(s) if ltr == ch]
+	ranges = list()
+	for k, g in groupby(enumerate(data), lambda (i,x):i-x):
+		group =  map(itemgetter(1), g)
+		if (group[-1] - group[0]) < minlen:
+			continue
+		else:
+			#Might need to +1 to positions for bedtools coords
+			ranges.append((name, group[0], group[-1]))
+	return ranges #Format = [('ScaffName,start,stop'),('ScaffName,start,stop')]
 
 def countN(sequence):
 	#Count number of ATGC and non-ATGC bases in sequence string
@@ -705,6 +718,16 @@ def main():
 
 	#Threshold and merge anomalous features.
 	anomalies = thresholdList(allWindows,KLIthreshold)
+
+	#Get 'N' map
+	###if args.maskN:
+		###nRanges = list()
+		###for name,seq in iterFasta(querySeq)
+			###nRanges.append(findBaseRanges(name, seq, 'N', minlen=10))
+		#Make BED objet
+		###nBlocks = pybedtools.BedTool(nRanges)=
+		#Mask 'N' blocks from anomalies
+		###anomalies = anomalies.intersect(nBlocks)
 
 	handle  = open(os.path.join(args.tempDir,args.gffOutfile), "w")
 	for i in anomaly2GFF(anomalies):
