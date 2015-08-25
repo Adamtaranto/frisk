@@ -63,3 +63,8 @@ target/
 
 # OSX crud
 .DS_Store
+
+#Testing stuff
+data/
+temp/
+sandpit/
