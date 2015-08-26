@@ -21,7 +21,7 @@
 	# D2/PCA clustering + output graphics.
 #Classify
 	# Determine kmers that are driving group separation (Positive control is RIP class, CpA --> TpA conversion = TA dinucleotide enrichment against background + CA depletion)
-# Identifiy bayesian-changepoint boundaries to non-self clusters using Rpy2 link to changepoint (Alternative to collapsing windows by threshold).
+# Identifiy bayesian-changepoint boundaries to non-self clusters
 # Mask N-blocks from annotation.
 # Find genes (from gff) that are in or overlap each non-self group.
 
@@ -79,7 +79,7 @@ def findBaseRanges(name, s, ch, minlen=0):
 		if (group[-1] - group[0]) < minlen:
 			continue
 		else:
-			#Might need to +1 to positions for bedtools coords
+			#Note: Might need to +1 to positions for bedtools coords that are not zero indexed
 			ranges.append((name, group[0], group[-1]))
 	return ranges #Format = [('ScaffName,start,stop'),('ScaffName,start,stop')]
 
@@ -130,6 +130,26 @@ def iterFasta(path):
 		yield (name, ''.join(seq))
 	handle.close()
 
+def getFasta(fastaPath):
+	"""Write fasta to dictionary, key by scaffold name."""
+	seqDict = dict()
+	for name,seq in iterFasta(fastaPath):
+		seqDict[name] = seq
+	return seqDict
+
+def getBEDSeq(fastaDict,BEDintervals):
+	"""Given BED object with scaffold coordinates, 
+		fetch sequence from dictionary of sequences, keyed by scaffold name. """
+	for rec in BEDintervals:
+		if rec[0] in fastaDict:
+			seq = fastaDict[rec[0]][int(rec[1])-1:int(rec[2])-1]
+			name = ":".join([rec[0],str(rec[1]),str(rec[2])])
+			if len(seq) > 0:
+				yield (name,seq)
+			else: 
+				print('Retrieved zero len sequence for %s' % name)
+		else:
+			continue
 
 def crawlGenome(args, querySeq):
 	#Take genome fasta extract scaffolds
@@ -749,10 +769,9 @@ def main():
 	##########################################
 	#Anomalous windows by KLI threshold without merging
 	anomWin  = thresholdList(allWindows,KLIthreshold,threshCol=3,merge=False)
-	anomSeqs = getBEDSeq(selfGenome,anomWin)
+	anomSeqs = getBEDSeq(selfGenome,anomWin) #yields generator object
 	
-	#def getFasta(fastaPath):
-	#def getBEDSeq(fastaDict,BED):
+	
 	
 	for target in anomSeqs:
 		computeKmers(args, None, None, target, False, blankMap)
