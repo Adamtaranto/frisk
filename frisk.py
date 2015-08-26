@@ -341,30 +341,30 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
 			for x in range(1,klen+1):
 				#Process maxmer
 				if x == klen:
-					subKmers['w'][x] = count * 4^x
+					subKmers['w'][x] = count * 4**x
 					subKmers['p'][x] = float(count) / ((windowSpace-(x-1)) * 2)
 				elif x >= 2:
 					subK = k[0:x] #Be sure to grab the first x bases in maxmer
-					subKmers['w'][x] = windowKmers[x-1][subK] * 4^x
+					subKmers['w'][x] = windowKmers[x-1][subK] * 4**x
 					subKmers['p'][x] = float(windowKmers[x-1][subK]) / ((windowSpace - (x-1)) * 2)
 				else:
 					subK = k[0] #Grab the first base in maxmer
-					subKmers['w'][x] = windowKmers[x-1][subK] * 4^x
+					subKmers['w'][x] = windowKmers[x-1][subK] * 4**x
 					subKmers['p'][x] = float(windowKmers[x-1][subK]) / ((windowSpace) * 2)
 
 		else: #Calculating IVOM weights for current window kmer against genome counts
 			for x in range(1,klen+1):
 				#Process maxmer
 				if x == klen:
-					subKmers['w'][x] = GenomeKmers[x-1][k] * 4^x
+					subKmers['w'][x] = GenomeKmers[x-1][k] * 4**x
 					subKmers['p'][x] = float(GenomeKmers[x-1][k]) / ((genomeSpace - (x-1)) * 2)
 				elif x >= 2:
 					subK = k[0:x] #Be sure to grab the first x bases in maxmer
-					subKmers['w'][x] = GenomeKmers[x-1][subK] * 4^x
+					subKmers['w'][x] = GenomeKmers[x-1][subK] * 4**x
 					subKmers['p'][x] = float(GenomeKmers[x-1][subK]) / ((genomeSpace - (x-1)) * 2)
 				else:
 					subK = k[0] #Grab the first base in maxmer
-					subKmers['w'][x] = GenomeKmers[x-1][subK] * 4^x
+					subKmers['w'][x] = GenomeKmers[x-1][subK] * 4**x
 					subKmers['p'][x] = float(GenomeKmers[x-1][subK]) / (genomeSpace * 2)
 
 		w_totals = 0
@@ -771,9 +771,7 @@ def main():
 	anomWin  = thresholdList(allWindows,KLIthreshold,threshCol=3,merge=False)
 	anomSeqs = getBEDSeq(selfGenome,anomWin) #yields generator object
 	
-	
-	
-	for target in anomSeqs:
+	for name,target in anomSeqs:
 		computeKmers(args, None, None, target, False, blankMap)
 		allKmers_win =
 		allKmers_gen = 
