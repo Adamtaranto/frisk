@@ -49,14 +49,18 @@ import seaborn as sns
 import sys
 import versioneer
 
+
 #######################
 #######################
 ### Global contants ###
 #######################
 #######################
 
+from ._version import get_versions
+__version__ = get_versions()['version']
+FRISK_VERSION = get_versions()['version']
+del get_versions
 
-FRISK_VERSION = '0.0.2'
 
 LETTERS = ('A', 'T', 'G', 'C')
 
@@ -942,14 +946,14 @@ def range2interval(rangeList, scaffoldWindows, dataCol, state):
 	#deal with same start/stop
 	#scaffoldWindows = (name, start, stop, KLI, othershiz)
 	for block in rangeList:
-		yield (scaffoldWindows[0],int(scaffoldWindows[block[0]][1]),int(scaffoldWindows[block[1]][2]),state)
+		yield (scaffoldWindows[0][0],int(scaffoldWindows[block[0]][1]),int(scaffoldWindows[block[1]][2]),state)
 
 def hmmBED2GFF(hmmBED):
 	n = 0
 	for rec in hmmBED:
 		n += 1
 		outstring = '\t'.join([rec[0],'frisk', rec[3], rec[1], rec[2],'.', '+', '.','ID='+ rec[3] + str(n).zfill(8)]) + '\n'
-		yield outstring
+		print outstring
 
 
 
