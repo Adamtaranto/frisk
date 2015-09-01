@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 
+#Extract sequence using coords
+#Fetch Kmers for sequence 
+#Summay stats for batch of seqs
+
+#myIterable.seek(0)
+
 def drivingKmers(seqList):
 	'''Take sequences from cluster return mean and variance 
 	of IVOM KLI for each Kmer. For each k, rank +/- kmers 
