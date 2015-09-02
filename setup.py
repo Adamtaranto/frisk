@@ -2,10 +2,11 @@ from setuptools import setup
 import versioneer
 
 versioneer.VCS = 'git'
-versioneer.versionfile_source = '_version.py'
-versioneer.versionfile_build = '_version.py'
-versioneer.tag_prefix = ''
-versioneer.parentdir_prefix = 'frisk-'
+versioneer.versionfile_source = 'frisk/_version.py'
+versioneer.versionfile_build = 'frisk/_version.py'
+versioneer.tag_prefix = 'v'  # tags are like v1.2.0
+versioneer.parentdir_prefix = '.'
+CMDCLASS = versioneer.get_cmdclass()
 
 desc = """
 frisk: Detection of sequence composition anomalies using multiple order kmers.

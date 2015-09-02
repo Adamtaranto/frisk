@@ -56,11 +56,12 @@ import versioneer
 #######################
 #######################
 
-from ._version import get_versions
-__version__ = get_versions()['version']
-FRISK_VERSION = get_versions()['version']
-del get_versions
+#from ._version import get_versions
+#__version__ = get_versions()['version']
+#FRISK_VERSION = get_versions()['version']
+#del get_versions
 
+FRISK_VERSION = '0.0.2' 
 
 LETTERS = ('A', 'T', 'G', 'C')
 
@@ -145,7 +146,8 @@ def getFasta(fastaPath):
 	nRanges = list()
 	for name,seq in iterFasta(fastaPath):
 		seqDict[name] = seq
-		nRanges.append(findBaseRanges(seq, 'N', name=name, minlen=10))
+		for i in findBaseRanges(seq, 'N', name=name, minlen=10):
+			nRanges.append(i)
 	nBlocks = pybedtools.BedTool(nRanges)
 	return seqDict,nBlocks
 
@@ -430,9 +432,6 @@ def KLI(GenomeIVOM, windowIVOM, args):
 			#Positive number indicates enriched in window relative to genome
 			#Magnitude of KLI reflects degree of difference
 			windowKLI += (w*math.log((w/G),2))
-			altWindowKLI += (w*math.log((w/G),10))
-			print('log2KLI' + str(windowKLI))
-			print('log10KLI' + str(altWindowKLI))
 			#Note: Using log2 instead of log10 to accentuate variance within small range.
 	return windowKLI
 
@@ -562,6 +561,36 @@ def updateHMM(smallHMM, bigThresh): #BED interval objects. A = Fine scale guide,
 	newAnnotations = pybedtools.BedTool(updatedBoundaries)
 	return newAnnotations
 
+def	hmm2BED(allWindows, model, dataCol=3):
+	allIntervals	=	list()
+	#Get unique scaffold names from tuples in allWindows
+	scaffoldList	= 	[i for i in Counter(elem[0] for elem in allWindows)]
+	for name in scaffoldList:
+		scaffoldWin = 	sorted([rec for rec in allWindows if rec[0] == name], key=itemgetter(0,1,2))
+		dataSeq		= 	wIndex(dataCol,scaffoldWin)
+		dataSeq		=	dataSeq[:,np.newaxis]
+		stateSeq	= 	model.predict(dataSeq)
+		stateRange1 = 	findBaseRanges(stateSeq, 0)
+		stateRange2 = 	findBaseRanges(stateSeq, 1)
+		for i in range2interval(stateRange1,scaffoldWin,'State1_'):
+			allIntervals.append(i)
+		for i in range2interval(stateRange2,scaffoldWin,'State2_'):
+			allIntervals.append(i)
+	allIntervals 	= 	sorted(allIntervals, key=itemgetter(0,1,2))
+	allBED 			= 	pybedtools.BedTool(allIntervals)
+	return allBED
+
+def range2interval(rangeList, scaffoldWindows, state):
+	for block in rangeList:
+		yield (scaffoldWindows[0][0],int(scaffoldWindows[block[0]][1]),int(scaffoldWindows[block[1]][2]),state)
+
+def hmmBED2GFF(hmmBED):
+	n = 0
+	for rec in hmmBED:
+		n += 1
+		outstring = '\t'.join([rec[0],'frisk_' + FRISK_VERSION, str(rec[3]), str(rec[1]), str(rec[2]),'.', '+', '.','ID='+ rec[3] + str(n).zfill(8)]) + '\n'
+		yield outstring
+
 def mainArgs():
 	"""Process command-line arguments"""
 
@@ -579,8 +608,7 @@ def mainArgs():
 						default=None,
 						help='Detect anomalous regions in this sequence by comparison \
 						to hostSeq. Defaults to hostSeq.')
-	parser.add_argument('-g',
-						'--gffPath',
+	parser.add_argument('--gffIn',
 						type=str,
 						default=None,
 						help='Path to GFF file with annotations for genome being frisked.')
@@ -702,18 +730,15 @@ def mainArgs():
 						help='Options for defining non-self threshold on window KLI scores: Otsu binarisation, 2-state HMM, percentile.')
 	
 	#PCA Stuff
-	parser.add_argument('-p',
-						'--runProjection',
+	parser.add_argument('--runProjection',
 						default=None,
 						choices=[None, 'PCA2', 'PCA3', 'MDS2', 'D2' ],
 						help='Project anomalous windows into multidimensional space.')
-	parser.add_argument('-c',
-						'--culster',
+	parser.add_argument('--culster',
 						default=None,
 						choices=[None, 'DBSCAN', 'KMEANS'],
 						help='Attempt clustering of PCA projection.')
-	parser.add_argument('-n',
-						'--spikeNormal',
+	parser.add_argument('--spikeNormal',
 						action='store_true',
 						default=False,
 						help='Include a sampling of windows from the centre of the self population.')
@@ -863,11 +888,17 @@ def main():
 	##########################################
 
 	if args.RIP:
-		PI	=	wIndex(4,allWindows)
-		SI	=	wIndex(5,allWindows)
-		CRI	=	wIndex(6,allWindows)
-		sqrCRI = CRI**2
-		logCRI = np.log10(CRI)
+		PI		=	wIndex(4,allWindows)
+		SI		=	wIndex(5,allWindows)
+		CRI		=	wIndex(6,allWindows)
+		sqrCRI 	= 	CRI**2
+		logCRI 	= 	np.log10(CRI)
+		#Scrub NANs
+		PI		=	PI[~np.isnan(PI)]
+		SI		=	SI[~np.isnan(SI)]
+		CRI		=	CRI[~np.isnan(CRI)]
+		sqrCRI	=	sqrCRI[~np.isnan(sqrCRI)]
+		logCRI 	= 	logCRI[np.logical_not(np.isnan(logCRI))]
 
 	##########################################
 	###########  Calculate and Set  ##########
@@ -875,8 +906,9 @@ def main():
 	##########################################
 
 	#Get KLI data for all surveyed windows
-	allKLI = wIndex(3,allWindows)
-	logKLI = np.log10(allKLI) #log10 transform
+	allKLI 			=	wIndex(3,allWindows)
+	logKLI 			=	np.log10(allKLI)
+	KLIthreshold	=	None
 	
 	#Calc optimal bins for KLI data
 	if FDBins(logKLI) < 30:
@@ -890,13 +922,8 @@ def main():
 			KLIthreshold = np.log10(float(args.forceThresholdKLI))
 			logging.info('Forcing log10(KLI) threshold = %s' % str(KLIthreshold))
 		
-		#Optional set threshold at percentile
-		elif args.threshTypeKLI == 'percentile':
-			KLIthreshold = np.percentile(logKLI, args.percentileKLI)
-			logging.info('Setting threshold at %s percentile of log10(KLI)= %s' % (str(args.percentileKLI),str(KLIthreshold)))
-
 		#Use Otsu method to set threshold
-		else:
+		elif args.threshTypeKLI == 'otsu':
 			logging.info('Calculating optimal KLI threshold by Otsu binarization.')
 			if FDBins(logKLI) < 10: #Calculate optimal number of bins for logKLI set using Freedman-Diaconnis method.
 				logging.warning('[WARNING] Low variance in log10(KLI) data: Review data distribution, \
@@ -907,55 +934,32 @@ def main():
 				KLIthreshold = otsu(logKLI,optBins) #Use Otsu binarization to calc optimal log10 threshold for weird KLI scores
 				logging.info('Optimal log10(KLI) threshold = %s' % str(KLIthreshold))
 
+		#Optional set threshold at percentile
+		else:
+			KLIthreshold = np.percentile(logKLI, args.percentileKLI)
+			logging.info('Setting threshold at %s percentile of log10(KLI)= %s' % (str(args.percentileKLI),str(KLIthreshold)))
+
 	##########################################
 	##########  Set anomaly feature  #########
 	####### boundaries using 2-state HMM  ####
 	##########################################
 
 	if args.threshTypeKLI == 'hmm':
-		#Do the HMM thing
+		#Create 2-state HMM model
 		model	=	hmm.GaussianHMM(n_components=2,covariance_type="full")
-		a	=	np.asarray(allKLI)
-		b	=	a[:,np.newaxis]
-		#Train on all data
-		model.fit(b) #Note: Ideally pass all scaffold data sequences in separately
+		#Train on KLI strings from all scaffolds
+		dataKLI	=	np.asarray(allKLI)
+		dataKLI	=	dataKLI[:,np.newaxis]
+		model.fit(dataKLI) #Note: Ideally pass all scaffold data sequences in separately
+		#Use model to prdict HMM state for all scaffolds
+		hmmBED	= hmm2BED(allWindows,model,dataCol=3)
 		
-		
-def	hmm2BED(allWindows, dataCol, model):
-	
-	allIntervals = list()
-	#get all scaffold names from allWindows
-
-	#For name in allNames
-		#get scaff windows from allWindows
-		#sort scaffwindows by start position
-		a = wIndex(dataCol,scaffWindows)
-		b =	a[:,np.newaxis]
-		Z = model.predict(b)
-		state1 = findBaseRanges(Z, 0)
-		state2 = findBaseRanges(Z, 1)
-
-		allIntervals.append(range2interval(state1,scaffWindows,dataCol,'state1'))
-		allIntervals.append(range2interval(state2,scaffWindows,dataCol,'state2'))
-
-	allBED = pybedtools.BedTool(allIntervals)
-	
-	return allBED
-
-def range2interval(rangeList, scaffoldWindows, dataCol, state):
-	#deal with same start/stop
-	#scaffoldWindows = (name, start, stop, KLI, othershiz)
-	for block in rangeList:
-		yield (scaffoldWindows[0][0],int(scaffoldWindows[block[0]][1]),int(scaffoldWindows[block[1]][2]),state)
-
-def hmmBED2GFF(hmmBED):
-	n = 0
-	for rec in hmmBED:
-		n += 1
-		outstring = '\t'.join([rec[0],'frisk', rec[3], rec[1], rec[2],'.', '+', '.','ID='+ rec[3] + str(n).zfill(8)]) + '\n'
-		print outstring
-
-
+		#Note:Add merge support to hmmBED2GFF
+		#Write hmm states as GFF3 outfile
+		handle = open(os.path.join(args.tempDir,'hmm.gff3'),"w")
+		for i in hmmBED2GFF(hmmBED):
+			handle.write(i)
+		handle.close()
 
 
 	##########################################
@@ -983,16 +987,16 @@ def hmmBED2GFF(hmmBED):
 	
 	#If a gff3 annotation is provided 
 	#make function def findOverlaps(args, anomBED):
-	if args.gffPath:
+	if args.gffIn:
 		#Change default name to be query centric, ok.
-		gffOutname = os.path.join(args.tempDir, "featuresInAnomalies_" + os.path.basename(args.gffPath))
-		features = pybedtools.BedTool(args.gffPath).each(gffFilter, feature=args.gffFeatures)
-		extractedFeatures = features.window(b=anomalies, w=args.gffRange, u=True)
+		gffOutname			= os.path.join(args.tempDir, "featuresInAnomalies_" + os.path.basename(args.gffIn))
+		features			= pybedtools.BedTool(args.gffIn).each(gffFilter, feature=args.gffFeatures)
+		extractedFeatures 	= features.window(b=anomalies, w=args.gffRange, u=True)
 		if len(extractedFeatures) > 0:
 			extractedFeatures.saveas(gffOutname)
 			logging.info('Successfully extracted %s features from within %sbp of anomaly annotations.' % (str(len(extractedFeatures)), str(args.gffRange)))
 		else:
-			logging.info('No features from %s detected within %s bases of anomalies.' % (args.gffPath, str(args.gffRange)))
+			logging.info('No features from %s detected within %s bases of anomalies.' % (args.gffIn, str(args.gffRange)))
 
 
 	##########################################
@@ -1032,7 +1036,8 @@ def hmmBED2GFF(hmmBED):
 		plt.title('log10(KLI) Distribution Optimized Bins')
 		sns.set(color_codes=True)
 		sns.distplot(logKLI, hist=True, bins=optBins, kde=False, rug=False, color="b")
-		plt.axvline(KLIthreshold, color='r', linestyle='dashed', linewidth=2)
+		if KLIthreshold:
+			plt.axvline(KLIthreshold, color='r', linestyle='dashed', linewidth=2)
 		pdf.savefig()
 		plt.close()
 
@@ -1040,7 +1045,8 @@ def hmmBED2GFF(hmmBED):
 		plt.title('log10(KLI) Distribution Fine Bins')
 		sns.set(color_codes=True)
 		sns.distplot(logKLI, hist=True, bins=100, kde=False, rug=False, color="b")
-		plt.axvline(KLIthreshold, color='r', linestyle='dashed', linewidth=2)
+		if KLIthreshold:
+			plt.axvline(KLIthreshold, color='r', linestyle='dashed', linewidth=2)
 		pdf.savefig()
 		plt.close()
 
