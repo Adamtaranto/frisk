@@ -8,23 +8,6 @@
 # For using in detecting genomic islands and potential segmental lateral gene transfer events.                       #
 ######################################################################################################################
 
-##Completed functions
-# Calculate all kmer frequencies (1-8mer) in query genome. [DONE]
-# Calculate KLI 'selfiness score' for sliding window 5000bp, increment 2500. [DONE]
-# Determine non-selifiness KLI threshold for genome. [DONE]
-
-##Pending functions
-# Collapse windows: merge overlapping non-self windows, export as gff3 (store KLI range from constituent windows)
-# Cluster extracted non-self windows: 
-	# Store kmer table per window, 
-	# Normalise kmer counts by window size, 
-	# D2/PCA clustering + output graphics.
-#Classify
-	# Determine kmers that are driving group separation (Positive control is RIP class, CpA --> TpA conversion = TA dinucleotide enrichment against background + CA depletion)
-# Identifiy bayesian-changepoint boundaries to non-self clusters
-# Mask N-blocks from annotation.
-# Find genes (from gff) that are in or overlap each non-self group.
-
 import argparse
 import array
 from collections import Counter
@@ -35,20 +18,20 @@ from hmmlearn import hmm
 import itertools
 import logging
 import math
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 import numpy as np
 from operator import itemgetter
 import os
 import os.path
-#import pandas as pd
 import pickle
 import pybedtools
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
+from sklearn.decomposition import PCA
+from sklearn.cluster import DBSCAN
 from scipy import stats
 import seaborn as sns
 import sys
 import versioneer
-
 
 #######################
 #######################
@@ -79,9 +62,9 @@ def tempPathCheck(args):
 		os.makedirs(tempFolder)
 
 def findBaseRanges(s, ch, name=None, minlen=0):
-	#For string return intervals of character longer than minimum length.
-	data = [i for i, ltr in enumerate(s) if ltr == ch]
-	ranges = list()
+	"""For string return intervals of character longer than minimum length."""
+	data 	= [i for i,ltr in enumerate(s) if ltr == ch]
+	ranges 	= list()
 	for k, g in itertools.groupby(enumerate(data), lambda (i,x):i-x):
 		group =  map(itemgetter(1), g)
 		if (group[-1] - group[0]) < minlen:
@@ -95,24 +78,23 @@ def findBaseRanges(s, ch, name=None, minlen=0):
 
 def countN(sequence):
 	#Count number of ATGC and non-ATGC bases in sequence string
-	count  = 0
-	countN = 0
-	baseTally = Counter()
+	count  		= 0
+	countN 		= 0
+	baseTally 	= Counter()
 
 	baseTally += Counter(sequence)
 
 	for i in baseTally:
 		if i not in LETTERS:
-			countN += baseTally[i]
+			countN 	+= baseTally[i]
 		else:
-			count += baseTally[i]
+			count 	+= baseTally[i]
 	#return tuple with readable base count and non-ATGC base count
 	return (count,countN)
 
 def iterFasta(path):
 	#path = location of fasta to be processed
 	"""Iterates over the sequences of a fasta file"""
-
 	logging.info("Loading fasta files from %s" % path)
 	name = None
 	seq = []
@@ -155,34 +137,37 @@ def getBEDSeq(fastaDict,BEDintervals):
 	"""Given BED object with scaffold coordinates, 
 		fetch sequence from dictionary of sequences, keyed by scaffold name. """
 	for rec in BEDintervals:
+		print rec
 		if rec[0] in fastaDict:
-			seq = fastaDict[rec[0]][int(rec[1])-1:int(rec[2])-1]
+			logging.info('From %s try get range %s to %s.' % (rec[0], str(int(rec[1])), str(int(rec[2]))))
+			seq = fastaDict[rec[0]][int(rec[1])-1:int(rec[2])]
+			print len(seq)
 			name = ":".join([rec[0],str(rec[1]),str(rec[2])])
+			print name
 			if len(seq) > 0:
 				yield (name,seq)
 			else: 
-				print('Retrieved zero len sequence for %s' % name)
+				logging.error('Error: Retrieved zero len sequence for %s' % name)
 		else:
+			logging.error('Scaffold %s not found in reference.' % str(rec[0]))
 			continue
 
 def crawlGenome(args, querySeq):
-	#Take genome fasta extract scaffolds
-	#Extract incremented windows
-	#yield (seq, scaffold name, window start, window end)
-
-	w = args.windowlen
-	i = args.increment
-	saveSmalls = args.scaffoldsAll
-	nSeqs = 0
+	"""Take genome fasta extract scaffolds, extract incremented windows,
+		yield (seq, scaffold name, window start, window end)"""
+	w 			= args.windowlen
+	i 			= args.increment
+	saveSmalls 	= args.scaffoldsAll
+	nSeqs 		= 0
 
 	#Iterate over scaffolds
 	for name,seq in iterFasta(querySeq):
 		#Reset stats and counters
-		windowCount = 0
-		winExclude = 0
-		bases,nonbase = countN(seq)
-		size = len(seq)
-		jumpback = False
+		windowCount		= 0
+		winExclude 		= 0
+		bases,nonbase 	= countN(seq)
+		size 			= len(seq)
+		jumpback 		= False
 		#Process scaffolds that fall below window size + minimum acceptable first increment, as a single window.
 		if size <= w + ((w * 0.75) - i) and saveSmalls:
 			scaffB,scaffN = countN(seq)
@@ -192,7 +177,7 @@ def crawlGenome(args, querySeq):
 				continue
 			else:
 				logging.info('Rescuing small scaffold %s' % name)
-				yield (seq, name, 0, size)
+				yield (seq, name, 1, size)
 				windowCount += 1
 				nSeqs += 1
 		else:
@@ -200,8 +185,8 @@ def crawlGenome(args, querySeq):
 			for j in xrange(0, size - i + 1, i):
 				#If window overshoots sequence, jump back one w len from last base.
 				if j+w > size:
-					winSeq = seq[size - w: size]
-					jumpback = True
+					winSeq 		= seq[size - w: size]
+					jumpback 	= True
 				else:
 					#Extract window of len w starting at current base
 					winSeq = seq[j: j+w]
@@ -236,10 +221,8 @@ def prepareMaps(k, maxk, kmers):
 	kmers = newKmers
 	return prepareMaps(k + 1, maxk, kmers)
 
-def rangeMaps(args):
+def rangeMaps(kMin,kMax):
 	#Calls prepareMaps to write list of kmer dictionaries for range kmin to kmax
-	kMin    = args.minWordSize
-	kMax    = args.maxWordSize
 	maps    = []
 	logging.info('Preparing kmer maps')
 	#Prepare possible kmer combinations for each len k
@@ -251,10 +234,16 @@ def revComplement(kmer):
 	revcompl = lambda x: ''.join([{'A':'T','C':'G','G':'C','T':'A'}[B] for B in x][::-1])
 	return revcompl(kmer)
 
-def computeKmers(args, path, genomepickle, window, genomeMode, kmerMap):
-	#args, path to genome, tuple(windowID,Seq), fastabase.kmers, genomeMode = true/false, precalculated kmerMap)
-	#windowKmers = computeKmers(args, None, None, target, False, blankMap)
-	#genomeKmers = computeKmers(args, path, genomepickle, None , True, blankMap)
+def computeKmers(args, genomepickle=None, window=None, genomeMode=False, kmerMap=None, getMeta=True, sym=False):
+	
+	#args					'arguments object'
+	#genomepickle=None		'If run in genome mode dump kmer map to this file'
+	#window=None			'tuple(windowID,Seq)'
+	#genomeMode=None		'If genome mode: load genome fasta from args.hostSeq, count kmers symmetrically'
+	#kmerMap=None			'Blank kmer map - list of dictionaries'
+	#getMeta=True			'Store metadata in final output: SeqLen, excluded maxmers, N's in seq'
+	#sym=False				'Calculate kmers symmetrically - as double stranded seq'
+
 	"""Compute the kmer counts throughout the kmer range for the complete genome, and
 	write the output to a file."""
 
@@ -263,8 +252,8 @@ def computeKmers(args, path, genomepickle, window, genomeMode, kmerMap):
 		sys.exit(1)
 
 	if genomeMode:
-		logging.info('Computing kmers for %s' % path)
-		targetSeq = iterFasta(path)
+		logging.info('Computing kmers for %s' % args.hostSeq)
+		targetSeq = iterFasta(args.hostSeq)
 	else:
 		targetSeq = window
 
@@ -272,6 +261,8 @@ def computeKmers(args, path, genomepickle, window, genomeMode, kmerMap):
 	excludedMaxMer['exMax'] = 0
 	surveySeqLen = dict()
 	surveySeqLen['totalLen'] = 0
+	nCounter 	= dict()
+	nCounter['nnTotal'] = 0
 
 	# Prepare all maps
 	kMin    = args.minWordSize
@@ -281,44 +272,47 @@ def computeKmers(args, path, genomepickle, window, genomeMode, kmerMap):
 
 	# Iterate over sequences
 	nSeqs   = 0
-	#Read (name, sequence) tuple
+	# Read (name, sequence) tuple
 	for name,seq in targetSeq:
 		size   = len(seq)
 		surveySeqLen['totalLen'] += size
+		baseCount,nnCount 	 = countN(seq)
+		nCounter['nnTotal']	+=	nnCount
 		# For each kmer length
 		for i in xrange(kMin, kMax + 1):
 			# Crawl sequence one base at a time (stop k bases from end)
 			for j in xrange(size - i + 1):
-				#Extract word of len i (kmer) starting at current base
+				# Extract word of len i (kmer) starting at current base
 				word = seq[j:j + i]
-				#This checks that the string is a legit kmer in the map i.e. does not contain Ns
-				#.get will return 'None' if kmer key does not exist, or value if it does.
-				#Updates idx original 0 count of word
+				# This checks that the string is a legit kmer in the map i.e. does not contain Ns
+				# .get will return 'None' if kmer key does not exist, or value if it does.
+				# Updates idx original 0 count of word
 				idx  = maps[i - kMin].get(word, None)
 				# If the word contains characters other than ATGC, skip to next
 				if idx is None:
 					if i == kMax:
 						excludedMaxMer['exMax'] += 1
 					continue
-				#Increment instances of current word
+				# Increment instances of current word
 				maps[i - kMin][word] += 1
-				#Increment count for reverse complement of current word
-				if genomeMode:
+				# Increment count for reverse complement of current word
+				if genomeMode or sym:
 					maps[i - kMin][revComplement(word)] += 1
 
-		#Iterate to next sequence in input fasta
+		# Iterate to next sequence in input fasta
 		nSeqs += 1
 
-	#Add excluded 
-	maps.append(surveySeqLen)
-	maps.append(excludedMaxMer)
+	if getMeta:
+		maps.append(surveySeqLen)
+		maps.append(excludedMaxMer)
+		maps.append(nCounter)
 
 	if genomeMode:
-		#Save genome kmers to pickle
+		# Save genome kmers to pickle
 		pickle.dump(maps, open(genomepickle, "wb"))
 		# Trace
 		logging.info('Processed %d sequences' % nSeqs)
-	#return a dictionary of kmer counts
+	# Return a dictionary of kmer counts
 	return maps
 
 def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
@@ -326,16 +320,13 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
 	# Input is dictionary of all kmers in current window. Should include a final dict with N count for each kmer length.
 	# Calculates weights Wi(=Counts*deg_freedom) and obs_freqs (Pi)
 
-	#print "windowKmers: "
-	#print windowKmers[0]
-	#print "GenomeKmers: "
-	#print GenomeKmers[0]
-
 	windowlen   = args.windowlen
 	klen        = args.maxWordSize
 
-	genomeSpace = GenomeKmers[klen]['totalLen'] - (GenomeKmers[klen+1]['exMax'] * klen)
-	windowSpace = windowKmers[klen]['totalLen'] - (windowKmers[klen+1]['exMax'] * klen)
+	#Note: Revisit appropriate measure of survey size for kmer observations
+	#Perhaps readable Maxmers in seq - N-containg maxmers in seq??
+	genomeSpace = GenomeKmers[klen]['totalLen'] - GenomeKmers[klen+2]['nnTotal']
+	windowSpace = windowKmers[klen]['totalLen'] - windowKmers[klen+2]['nnTotal']
 
 	sumWindowIVOM = 0
 	subKmers = dict()
@@ -357,6 +348,7 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
 				if x == klen:
 					#Note:Weighting could probably be achieved by observations multiplied by kmerlen squared i.e. count * x**2
 					subKmers['w'][x] = count * 4**x # kmer_count * (DNA bases^seqlength)
+					#Note: Should probability of observing x count of k be = total available non-N k-units in window?
 					subKmers['p'][x] = float(count) / ((windowSpace-(x-1)) * 2)
 				elif x >= 2:
 					subK = k[0:x] #Grab the first x bases in maxmer
@@ -421,18 +413,15 @@ def KLI(GenomeIVOM, windowIVOM, args):
 	windowKLI = 0
 	for k in windowIVOM:
 		w = float(windowIVOM[k])
+		#Note: possible div 0 error when window kmer is absent in genome population.
 		G = float(GenomeIVOM[k])
 		#print("Window IVOM: %s" % str(w))
 		#print("Genome IVOM: %s" % str(G))
-		if args.absoluteKLI:
-			#Absolute value removes direction of divergence
-			windowKLI += (w*abs(math.log((w/G),2)))
-		else:
-			#Negative number indicates kmer depleted in window relative to genome
-			#Positive number indicates enriched in window relative to genome
-			#Magnitude of KLI reflects degree of difference
-			windowKLI += (w*math.log((w/G),2))
-			#Note: Using log2 instead of log10 to accentuate variance within small range.
+		#Negative number indicates kmer depleted in window relative to genome
+		#Positive number indicates enriched in window relative to genome
+		#Magnitude of KLI reflects degree of difference
+		windowKLI += (w*math.log((w/G),2))
+		#Note: Using log2 instead of log10 to accentuate variance within small range.
 	return windowKLI
 
 def calcRIP(windowKmers):
@@ -455,7 +444,6 @@ def calcRIP(windowKmers):
 	return (PI,SI,CRI)
 
 def makePicklePath(args,**kwargs):
-	#Note: need to add kmer range to filename
 	pathbase = os.path.basename(args.hostSeq)
 	if kwargs['space'] == 'genome':
 		pickleOut = os.path.join(args.tempDir,pathbase + "_kmers_" +str(args.minWordSize) + "_" + str(args.maxWordSize) + "_" + kwargs['space'] + '.p')
@@ -465,24 +453,24 @@ def makePicklePath(args,**kwargs):
 
 def FDBins(data):
 	#Freedman-Diaconis method for calculating optimal number of bins for dataset
-	IQR = np.subtract(*np.percentile(data, [75, 25])) #Magic '*' unpacks tuple and passes two values to subtract function.
-	bins = 2 * IQR * math.pow(len(data),(1.0/3.0)) #Number of bins
-	bins = int(round(bins)) #Otsu needs rounded integer
+	IQR 	= np.subtract(*np.percentile(data, [75, 25])) #Magic '*' unpacks tuple and passes two values to subtract function.
+	bins 	= 2 * IQR * math.pow(len(data),(1.0/3.0)) #Number of bins
+	bins 	= int(round(bins)) #Otsu needs rounded integer
 	return bins
 
 def otsu(data,optBins):
 	#data is array of log10(KLI) 
-	raw = data
-	data = np.atleast_1d(data)
-	data = data[~ np.isnan(data)]
-	data = data/(max(abs(data))*-1.0) #Scale to 0-1 and make positive
-	hist,binEdges = np.histogram(data,bins=optBins)
-	hist = hist * 1.0 #Covert to floats
-	hist_norm = hist.ravel()/hist.max() #Normalise hist to largest bin
-	Q = hist_norm.cumsum()
-	bins = np.arange(optBins)
-	fn_min = np.inf
-	thresh = -1
+	raw 			= data
+	data 			= np.atleast_1d(data)
+	data 			= data[~ np.isnan(data)]
+	data 			= data/(max(abs(data))*-1.0) #Scale to 0-1 and make positive
+	hist,binEdges 	= np.histogram(data,bins=optBins)
+	hist 			= hist * 1.0 #Covert to floats
+	hist_norm 		= hist.ravel()/hist.max() #Normalise hist to largest bin
+	Q 				= hist_norm.cumsum()
+	bins 			= np.arange(optBins)
+	fn_min 			= np.inf
+	thresh 			= -1
 	for i in xrange(1,optBins): #Start from second position (1) to compare all to bin 0
 		p1,p2 = np.hsplit(hist_norm,[i]) # Split normalised hist values into two brackets at bin i (bin 1 < i, bin 2 >=i)
 		q1,q2 = Q[i-1], Q[optBins-1] - Q[i-1] # cum sum of bin values #!! yields zero on final bin
@@ -523,9 +511,12 @@ def anomaly2GFF(anomBED, **kwargs):
 		n += 1
 
 def thresholdList(intervalList,threshold,args,threshCol=3,merge=True):
-	tItems = [t for t in intervalList if np.log10(t[3]) >= threshold]
+	if args.findSelf:
+		tItems = [t for t in intervalList if np.log10(t[3]) <= threshold]
+	else:
+		tItems = [t for t in intervalList if np.log10(t[3]) >= threshold]
 	sItems = sorted(tItems, key=itemgetter(0,1,2))
-	anomaliesBED = pybedtools.BedTool(sItems)
+	anomaliesBED  = pybedtools.BedTool(sItems)
 	if merge:
 		anomalies = anomaliesBED.merge(d=args.mergeDist, c='4,4,4', o='max,min,mean')
 	else:
@@ -533,7 +524,12 @@ def thresholdList(intervalList,threshold,args,threshCol=3,merge=True):
 	return anomalies
 
 def	wIndex(index, windows):
-	return np.asarray([x[index] for x in windows])
+	try:
+		indexCol = np.asarray([x[index] for x in windows])
+	except IndexError:
+		logging.error('Index field does not exist in window data.\n')
+		sys.exit(1)
+	return indexCol
 
 def meanRangeLen(l):
 	lens = list()
@@ -553,12 +549,12 @@ def updateHMM(smallHMM, bigThresh): #BED interval objects. A = Fine scale guide,
 		else:
 			hmmBounds[i[0]].append(int(i[1]))
 			hmmBounds[i[0]].append(int(i[2]))
-	updatedBoundaries= list()
+	updatedBoundaries = list()
 	for y in bigThresh:
-		newLeft  = min(hmmBounds[y[0]], key=lambda x:abs(x-int(y[1])))
-		newRight = min(hmmBounds[y[0]], key=lambda x:abs(x-int(y[2])))
+		newLeft  	= min(hmmBounds[y[0]], key=lambda x:abs(x-int(y[1])))
+		newRight 	= min(hmmBounds[y[0]], key=lambda x:abs(x-int(y[2])))
 		updatedBoundaries.append((y[0],newLeft,newRight))
-	newAnnotations = pybedtools.BedTool(updatedBoundaries)
+	newAnnotations 	= pybedtools.BedTool(updatedBoundaries)
 	return newAnnotations
 
 def	hmm2BED(allWindows, model, dataCol=3):
@@ -572,9 +568,9 @@ def	hmm2BED(allWindows, model, dataCol=3):
 		stateSeq	= 	model.predict(dataSeq)
 		stateRange1 = 	findBaseRanges(stateSeq, 0)
 		stateRange2 = 	findBaseRanges(stateSeq, 1)
-		for i in range2interval(stateRange1,scaffoldWin,'State1_'):
+		for i in range2interval(stateRange1,scaffoldWin,'State1'):
 			allIntervals.append(i)
-		for i in range2interval(stateRange2,scaffoldWin,'State2_'):
+		for i in range2interval(stateRange2,scaffoldWin,'State2'):
 			allIntervals.append(i)
 	allIntervals 	= 	sorted(allIntervals, key=itemgetter(0,1,2))
 	allBED 			= 	pybedtools.BedTool(allIntervals)
@@ -588,8 +584,257 @@ def hmmBED2GFF(hmmBED):
 	n = 0
 	for rec in hmmBED:
 		n += 1
-		outstring = '\t'.join([rec[0],'frisk_' + FRISK_VERSION, str(rec[3]), str(rec[1]), str(rec[2]),'.', '+', '.','ID='+ rec[3] + str(n).zfill(8)]) + '\n'
+		outstring = '\t'.join([rec[0],'frisk_' + FRISK_VERSION, str(rec[3]), str(rec[1]), str(rec[2]),'.', '+', '.','ID=' + rec[3] + '_' + str(n).zfill(8)]) + '\n'
 		yield outstring
+
+def flattenKmerMap(kMap, window=1, seqLen=1, kmin=1, kmax=5, prop=False):
+	'''Takes kmer count map (nested dict), flattens dictionaries to an array
+		and scales counts to a standard window length.'''
+	kCounts = list()
+	for d in kMap:
+		#Check kmer length for first key in current dictionary is in range.
+		if len(d.keys()[0]) in range(kmin,kmax+1):
+			if prop:
+				#Option to convert counts in d to proportions
+				kProps = {k: float(v)/sum(d.values()) for k,v in d.items()}
+				for x in itertools.chain(kProps.values()):
+					kCounts.append(x)
+			else:
+				for x in itertools.chain(d.values()):
+					kCounts.append(x)
+	if prop:
+		return	np.array(kCounts)
+	else:
+		return	(float(window)/seqLen) * np.array(kCounts)
+
+#	TSNE functions:
+#	Created by Laurens van der Maaten on 20-12-08.
+#	Copyright (c) 2008 Tilburg University.
+
+def Hbeta(D = np.array([]), beta = 1.0):
+	"""Compute the perplexity and the P-row for a specific
+	 value of the precision of a Gaussian distribution."""
+	# Compute P-row and corresponding perplexity
+	P 		= np.exp(-D.copy() * beta);
+	sumP 	= sum(P);
+	H 		= np.log(sumP) + beta * np.sum(D * P) / sumP;
+	P 		= P / sumP;
+	return H, P;
+
+
+def x2p(X = np.array([]), tol = 1e-5, perplexity = 30.0):
+	"""Performs a binary search to get P-values in such a 
+	way that each conditional Gaussian has the same perplexity."""
+	# Initialize some variables
+	logging.info("Computing pairwise distances...")
+	(n, d) 	= X.shape;
+	sum_X 	= np.sum(np.square(X), 1);
+	D 		= np.add(np.add(-2 * np.dot(X, X.T), sum_X).T, sum_X);
+	P 		= np.zeros((n, n));
+	beta 	= np.ones((n, 1));
+	logU 	= np.log(perplexity);
+	
+	# Loop over all datapoints
+	for i in range(n):
+	
+		# Print progress
+		if i % 500 == 0:
+			logging.info("Computing P-values for point %s of %s..." % (str(i),str(n)))
+	
+		# Compute the Gaussian kernel and entropy for the current precision
+		betamin 	= -np.inf; 
+		betamax 	=  np.inf;
+		Di 			= D[i, np.concatenate((np.r_[0:i], np.r_[i+1:n]))];
+		(H, thisP) 	= Hbeta(Di, beta[i]);
+			
+		# Evaluate whether the perplexity is within tolerance
+		Hdiff = H - logU;
+		tries = 0;
+		while np.abs(Hdiff) > tol and tries < 50:
+				
+			# If not, increase or decrease precision
+			if Hdiff > 0:
+				betamin = beta[i].copy();
+				if betamax == np.inf or betamax == -np.inf:
+					beta[i] = beta[i] * 2;
+				else:
+					beta[i] = (beta[i] + betamax) / 2;
+			else:
+				betamax = beta[i].copy();
+				if betamin == np.inf or betamin == -np.inf:
+					beta[i] = beta[i] / 2;
+				else:
+					beta[i] = (beta[i] + betamin) / 2;
+			
+			# Recompute the values
+			(H, thisP) 	= Hbeta(Di, beta[i]);
+			Hdiff 		= H - logU;
+			tries 		= tries + 1;
+			
+		# Set the final row of P
+		P[i, np.concatenate((np.r_[0:i], np.r_[i+1:n]))] = thisP;
+	
+	# Return final P-matrix
+		logging.info("Mean value of sigma: %s" % str(np.mean(np.sqrt(1 / beta))))
+	return P;
+
+
+def pca(X = np.array([]), no_dims = 50):
+	"""Runs PCA on the NxD array X in order to reduce its
+	 dimensionality to no_dims dimensions."""
+	logging.info("Preprocessing the data using PCA...")
+	(n, d) 	= X.shape;
+	X 		= X - np.tile(np.mean(X, 0), (n, 1));
+	(l, M) 	= np.linalg.eig(np.dot(X.T, X));
+	Y 		= np.dot(X, M[:,0:no_dims]);
+	return Y;
+
+
+def tsne(X = np.array([]), no_dims = 2, initial_dims = 50, perplexity = 30.0):
+	"""Runs t-SNE on the dataset in the NxD array X to reduce its dimensionality to no_dims dimensions.
+	The syntaxis of the function is Y = tsne.tsne(X, no_dims, perplexity), where X is an NxD NumPy array.
+	
+	Loosely speaking, one could say that a larger / denser dataset requires a larger perplexity. 
+	Typical values for the perplexity range between 5 and 50."""
+	
+	# Check inputs
+	if X.dtype != "float64":
+		logging.info("Error: array X should have type float64.");
+		return -1;
+	
+	# Initialize variables
+	X			= pca(X, initial_dims).real;
+	(n,d)		= X.shape;
+	max_iter	= 1000;
+	initial_momentum 	= 0.5;
+	final_momentum 		= 0.8;
+	eta			= 500;
+	min_gain	= 0.01;
+	Y			= np.random.randn(n, no_dims);
+	dY			= np.zeros((n, no_dims));
+	iY			= np.zeros((n, no_dims));
+	gains		= np.ones((n, no_dims));
+	
+	# Compute P-values
+	P = x2p(X, 1e-5, perplexity);
+	P = P + np.transpose(P);
+	P = P / np.sum(P);
+	P = P * 4;									# early exaggeration
+	P = np.maximum(P, 1e-12);
+	
+	# Run iterations
+	for iter in range(max_iter):
+		
+		# Compute pairwise affinities
+		sum_Y 	= np.sum(np.square(Y), 1);		
+		num 	= 1 / (1 + np.add(np.add(-2 * np.dot(Y, Y.T), sum_Y).T, sum_Y));
+		num[range(n), range(n)] = 0;
+		Q 		= num / np.sum(num);
+		Q 		= np.maximum(Q, 1e-12);
+		
+		# Compute gradient
+		PQ = P - Q;
+		for i in range(n):
+			dY[i,:] = np.sum(np.tile(PQ[:,i] * num[:,i], (no_dims, 1)).T * (Y[i,:] - Y), 0);
+			
+		# Perform the update
+		if iter < 20:
+			momentum = initial_momentum
+		else:
+			momentum = final_momentum
+		gains 	= (gains + 0.2) * ((dY > 0) != (iY > 0)) + (gains * 0.8) * ((dY > 0) == (iY > 0));
+		gains[gains < min_gain] = min_gain;
+		iY 		= momentum * iY - eta * (gains * dY);
+		Y 		= Y + iY;
+		Y 		= Y - np.tile(np.mean(Y, 0), (n, 1));
+		
+		# Compute current value of cost function
+		if (iter + 1) % 10 == 0:
+			C = np.sum(P * np.log(P / Q));
+			logging.info("Iteration %s : error is %s" % (str(iter + 1),str(C)))
+			
+		# Stop lying about P-values
+		if iter == 100:
+			P = P / 4;
+			
+	# Return solution
+	return Y;
+
+def pcaAxisLabels(pca_X, kmin=1, kmax=6):
+	'Generate axis labels for PCA. Format: "PC1: AT (90.01%)"'
+	blankmap 	= rangeMaps(kmin,kmax)
+	keylist 	= []
+	axisLabels 	= []
+	idx 		= 0 #PC index
+	for x in blankmap:
+		for y in x.keys():
+			keylist.append(y)
+	for x in pca_X.explained_variance_ratio_:
+		labelString = 'PC%s: %s (%s)' % (str(idx+1),str(keylist[np.argmax(pca_X.components_[idx])]),str(x*100))
+		axisLabels.append(labelString)
+		idx += 1
+	return axisLabels
+
+def makeScatter(Y,args,pca_X=None,y_pred=None):
+	if not args.culster:
+		if args.runProjection == 'PCA':
+			axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
+			#Generate graphic
+			plt.figure()
+			plt.title('PCA: kmer counts in anomalous regions')
+			plt.xlabel(axisLabels[0])
+			plt.ylabel(axisLabels[1])
+			plt.scatter(Y[:,0], Y[:,1], markersize=8, color='blue', alpha=0.4, label='kmer_Anomaly')
+		
+		elif args.runProjection =='TSNE':
+			plt.figure()
+			plt.title('t-SNE: kmer counts in anomalous regions')
+			plt.xlabel('X')
+			plt.ylabel('Y')
+			plt.scatter(Y[:,0], Y[:,1], markersize=8, color='blue', alpha=0.4, label='kmer_Anomaly')
+
+	elif args.culster:
+		colors = np.array([x for x in 'bgrcmykbgrcmykbgrcmykbgrcmyk'])
+		colors = np.hstack([colors] * 20)
+		markers = np.array([x for x in '+o^8s^Do+o^8s^Do+o^8s^Do+o^8s^Do*'])
+		markers = np.hstack([markers] * 20)
+
+		#List dbscan classes
+		y_class = np.unique(y_pred)
+		#List to hold scatterplots for each class
+		scatter_class = np.unique(y_pred).tolist()
+
+		#List to hold generated class names
+		names_class = np.unique(y_pred).tolist()
+		count_class = 0
+		for i in range(0,len(names_class)):
+			count_class += 1
+			if names_class[i] == -1:
+				names_class[i] = 'Unclassified'
+			else:
+				names_class[i] = 'Class_' + str(i)
+
+		fig = plt.figure() #figsize=(8,8)
+		ax = fig.add_subplot(111)
+		box = ax.get_position()
+		ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+		
+		#Generate scatterplots for each class using pca coords
+		for i in y_class:
+			X_class = Y[np.where(y_pred == i)]
+			scatter_idx = np.where(scatter_class == i)[0][0]
+			scatter_class[scatter_idx] = plt.scatter(X_class[:,0], X_class[:,1], color=colors[i], marker=markers[i], s=20)
+
+		ax.legend(scatter_class, names_class,loc='center left', bbox_to_anchor=(1, 0.5))
+
+		if args.runProjection == 'PCA':
+			axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
+			plt.title('PCA: kmer counts in anomalous regions')
+			plt.xlabel(axisLabels[0])
+			plt.ylabel(axisLabels[1])
+
+		elif args.runProjection =='TSNE':
+			plt.title('t-SNE: kmer counts in anomalous regions')
 
 def mainArgs():
 	"""Process command-line arguments"""
@@ -618,15 +863,19 @@ def mainArgs():
 						'--outfile',
 						type=str,
 						help='Write KLI-IVOM bed track to this file')
-	parser.add_argument('-G',
-						'--gffOutfile',
-						type=str,
-						help='Write merged anomaly annotations to gff3.')
 	parser.add_argument('-t',
 						'--tempDir',
 						type=str,
 						default='temp',
 						help='Name of temporary directory')
+	parser.add_argument('--gffOutfile',
+						type=str,
+						default=None,
+						help='Filename: Write merged anomaly annotations to gff3.')
+	parser.add_argument('--hmmOutfile',
+						type=str,
+						default='2StateHmm.gff3',
+						help='Filename: Write hmm determined state features to gff3.')
 	parser.add_argument('--graphics',
 						type=str,
 						default='Summary_graphics.pdf',
@@ -637,17 +886,15 @@ def mainArgs():
 						type=int,
 						default=0,
 						help='Merge anomalies annotations within x bases of each other.')
-	parser.add_argument('-f',
-						'--gffFeatures',
+	parser.add_argument('--gffFeatures',
 						type=str,
 						default=None,
 						nargs='+',
 						help='Space delimited list of feature types to report from gff')
-	parser.add_argument('-r',
-						'--gffRange',
+	parser.add_argument('--gffRange',
 						type=int,
 						default=0,
-						help='Report gff annotations within window of anomalous k-chores')
+						help='Report gff annotations within window of anomalous features')
 	
 	#Core settings
 	parser.add_argument('-m',
@@ -672,19 +919,11 @@ def mainArgs():
 						help='Slide survey window by this increment')
 
 	#Optional run settings
-	parser.add_argument('-E',
-						'--exitAfter',
+	parser.add_argument('--exitAfter',
 						default=None,
 						choices=[None, 'GenomeKmers', 'WindowKLI'],
 						help='Exit after completing task.')
-	parser.add_argument('-A',
-						'--absoluteKLI',
-						action='store_true',
-						default=False,
-						help='Calculate absolute value of KLI for each window. \
-						Default False, will report net KLI movement.')
-	parser.add_argument('-R',
-						'--recalc',
+	parser.add_argument('--recalc',
 						action='store_false',
 						default=True,
 						help='Force recalculation of reference sequence kmer counts if set. \
@@ -694,8 +933,7 @@ def mainArgs():
 						default=True,
 						help='Force recalculation of KLI score for specified window length and icrement if set. \
 						Default uses window KLIs from previous run.')
-	parser.add_argument('-s',
-						'--scaffoldsAll',
+	parser.add_argument('--scaffoldsAll',
 						action='store_true',
 						default=False,
 						help='If genomic scaffold is below minimum window size, process \
@@ -703,14 +941,18 @@ def mainArgs():
 
 	#Thresholding options for KLI
 	parser.add_argument('--threshTypeKLI',
-						default='percentile',
-						choices=[None, 'percentile', 'otsu','hmm'],
+						default='None',
+						choices=[None, 'percentile', 'otsu'],
 						help='Options for defining non-self threshold on window KLI scores: Otsu binarisation, 2-state HMM, percentile.')
 	parser.add_argument('--percentileKLI',
 						type=float,
 						default=99.0,
 						help='Percentile at which to threshold window KLI scores. \
 						By default, lower 99 percent windows are excluded.')
+	parser.add_argument('--hmmKLI',
+						action='store_true',
+						default=False,
+						help='Run 2-state HMM to classify windows as self or non-self based on KLI score.')
 	parser.add_argument('-F',
 						'--forceThresholdKLI',
 						type=float,
@@ -729,22 +971,47 @@ def mainArgs():
 						choices=[None, 'percentile', 'otsu','hmm'],
 						help='Options for defining non-self threshold on window KLI scores: Otsu binarisation, 2-state HMM, percentile.')
 	
-	#PCA Stuff
+	#Dimentionality Reduction Stuff
 	parser.add_argument('--runProjection',
 						default=None,
-						choices=[None, 'PCA2', 'PCA3', 'MDS2', 'D2' ],
+						choices=[None, 'PCA', 'TSNE' ],
 						help='Project anomalous windows into multidimensional space.')
+	parser.add_argument('--dimReduce',
+						default='windows',
+						choices=['features', 'windows'],
+						help='Run dimensionality reduction on all anomalous features, or on merged features.')
 	parser.add_argument('--culster',
 						default=None,
-						choices=[None, 'DBSCAN', 'KMEANS'],
-						help='Attempt clustering of PCA projection.')
+						choices=[None, 'DBSCAN'], #add support for kmeans later
+						help='Attempt clustering on projection.')
+	parser.add_argument('--dumpPCAdata',
+						action='store_true',
+						default=False,
+						help='If set export array of kmer proportional counts, and array of labels to temp directory.')
 	parser.add_argument('--spikeNormal',
 						action='store_true',
 						default=False,
 						help='Include a sampling of windows from the centre of the self population.')
+	parser.add_argument('--pcaMin',
+						type=int,
+						default='1',
+						help='Minimum order kmer set to include in dimensionality reduction data.')
+	parser.add_argument('--pcaMax',
+						type=int,
+						default='6',
+						help='Maxmimum order kmer set to include in dimensionality reduction data.')
+	parser.add_argument('--perplexity',
+						type=float,
+						default=20.0,
+						help='Used for TSNE. Typical values for the perplexity range between 5 and 50. Test larger values for larger/denser datasets.')
+	parser.add_argument('--epsDBSCAN',
+						type=float,
+						default=10,
+						help='Set eps value for DBSCAN, will attempt to cluster points < eps apart. Note: Typically smaller for PCA (0.01 - 3.0), than for t-SNE (5-20).')
 
 	#Revise feature boundaries using HMM split track with reduced window and increment size
-	parser.add_argument('--updateHMM',action='store_true',
+	parser.add_argument('--updateHMM',
+						action='store_true',
 						default=False,
 						help='Revise ')
 	parser.add_argument('--updateWin',
@@ -756,28 +1023,11 @@ def mainArgs():
 						default=500,
 						help='')
 
-	##Add options to threshold fine-scale HMM tracks
-	parser.add_argument('--updateForceThreshKLI',
-						type=float,
-						default=None,
-						help='')
-	parser.add_argument('--updateCRImin',
-						type=float,
-						default=None,
-						help='')
-	parser.add_argument('--updatePImin',
-						type=float,
-						default=None,
-						help='')
-	parser.add_argument('--updateSImax',
-						type=float,
-						default=None,
-						help='')
-	parser.add_argument('--updateHmmThreshType',
-						default=None,
-						choices=[None, 'percentile', 'otsu'],
-						help='')
-	
+	#Reverse mode: Finds windows in query genome with KLI BELOW threshold. i.e. MORE like the host genome.
+	parser.add_argument('--findSelf',
+						action='store_true',
+						default=False,
+						help='Finds windows in query genome with KLI BELOW threshold. i.e. MORE like the host genome.')
 
 	args = parser.parse_args()
 	if args.minWordSize > args.maxWordSize:
@@ -794,11 +1044,12 @@ def main():
 	#Note: Move a lot of this off to class object
 	logging.basicConfig(level=logging.INFO, format=("%(asctime)s - %(funcName)s - %(message)s"))
 	args = mainArgs()
-	path = args.hostSeq
+	#Set tempdir for pybedtools
+	#pybedtools.set_tempdir(args.tempDir)
 	#Make path to store genome kmer calculations
-	genomepickle = makePicklePath(args, space='genome')
+	genomepickle 	= makePicklePath(args, space='genome')
 	#Make path to store window KLI calculations
-	windowsPickle = makePicklePath(args, space='window')
+	windowsPickle 	= makePicklePath(args, space='window')
 
 	#Set query sequence as self if none provided
 	if not args.querySeq:
@@ -810,7 +1061,7 @@ def main():
 	tempPathCheck(args)
 
 	#Generate blank kmer dictionary
-	blankMap = rangeMaps(args)
+	blankMap = rangeMaps(args.minWordSize, args.maxWordSize)
 
 	#Read in query genome sequences as dict keyed by seq name
 	selfGenome,nBlocks = getFasta(querySeq)
@@ -819,14 +1070,13 @@ def main():
 	#########  Import or Calculate   #########
 	#########   Genome kmer Counts   #########
 	##########################################
-
 	#Check if genome kmer dict previously generated
 	if os.path.isfile(genomepickle) and args.recalc:
 		logging.info('Importing previously calculated genome kmers from %s' % genomepickle)
 		genomeKmers = pickle.load( open( genomepickle, "rb" ) )
 	else:
 		logging.info('Calculating kmers for host sequence: %s' % args.hostSeq)
-		genomeKmers = computeKmers(args, path, genomepickle, None , True, blankMap)
+		genomeKmers = computeKmers(args, genomepickle=genomepickle, window=None , genomeMode=True, kmerMap=blankMap, getMeta=True)
 		if args.exitAfter == 'GenomeKmers':
 			logging.info('Finished counting kmers. Exiting.')
 			sys.exit(0)
@@ -853,11 +1103,11 @@ def main():
 
 		#Loop over genome to get all window KLI scores
 		for seq,name,start,stop in crawlGenome(args, querySeq): #Note: coords are inclusive i.e. 1:10 = 0:9 in string
-			target 		= [(name,seq)]
-			windowKmers = computeKmers(args, None, None, target, False, blankMap)
-			GenomeIVOM  = IvomBuild(windowKmers, args, genomeKmers, True)
-			windowIVOM  = IvomBuild(windowKmers, args, genomeKmers, False)
-			windowKLI   = KLI(GenomeIVOM, windowIVOM,args)
+			target 			= [(name,seq)]
+			windowKmers 	= computeKmers(args, genomepickle=None, window=target, genomeMode=False, kmerMap=blankMap, getMeta=True)
+			GenomeIVOM  	= IvomBuild(windowKmers, args, genomeKmers, True)
+			windowIVOM  	= IvomBuild(windowKmers, args, genomeKmers, False)
+			windowKLI		= KLI(GenomeIVOM, windowIVOM,args)
 			if args.RIP:
 				PI,SI,CRI 	= calcRIP(windowKmers)
 				outString	= [name, str(start), str(stop), str(windowKLI),str(PI),str(SI),str(CRI)]
@@ -886,7 +1136,7 @@ def main():
 	###########  Calculate and Set  ##########
 	#############  RIP threshold  ############
 	##########################################
-
+	#Note: Index error if importing windows that do not include RIP data, add index check + sysExit to wIndex
 	if args.RIP:
 		PI		=	wIndex(4,allWindows)
 		SI		=	wIndex(5,allWindows)
@@ -916,7 +1166,7 @@ def main():
 	else:
 		optBins = FDBins(logKLI)
 	
-	if not args.threshTypeKLI == 'hmm':
+	if args.threshTypeKLI:
 		#Check for user specified KLI threshold
 		if args.forceThresholdKLI:
 			KLIthreshold = np.log10(float(args.forceThresholdKLI))
@@ -944,7 +1194,7 @@ def main():
 	####### boundaries using 2-state HMM  ####
 	##########################################
 
-	if args.threshTypeKLI == 'hmm':
+	if args.hmmKLI:
 		#Create 2-state HMM model
 		model	=	hmm.GaussianHMM(n_components=2,covariance_type="full")
 		#Train on KLI strings from all scaffolds
@@ -956,11 +1206,71 @@ def main():
 		
 		#Note:Add merge support to hmmBED2GFF
 		#Write hmm states as GFF3 outfile
-		handle = open(os.path.join(args.tempDir,'hmm.gff3'),"w")
+		handle = open(os.path.join(args.tempDir,args.hmmOutfile),"w")
 		for i in hmmBED2GFF(hmmBED):
 			handle.write(i)
 		handle.close()
 
+
+	####################################################
+	############## Dimensionality reduction ############
+	##############  on Anomaly kmer counts #############
+	####################################################
+	
+	#Generate cordinate list for anomalous regions
+	if args.runProjection:
+		if args.dimReduce == 'features':
+			anomWin  = thresholdList(allWindows,KLIthreshold,args,threshCol=3,merge=True)
+		elif args.dimReduce == 'windows':
+			#Anomalous windows by KLI threshold without merging
+			anomWin  = thresholdList(allWindows,KLIthreshold,args,threshCol=3,merge=False)
+		
+		#Extract sequences
+		logging.info('Recovering sequences %s for anomalous windows.' % str(len(anomWin)))
+		anomSeqs = getBEDSeq(selfGenome,anomWin) #generator object that yields (name,seq) tuples.
+		
+		#Counter to manage empty array on first pass
+		counter = 0
+		
+		for name,target in anomSeqs:
+			logging.info('Computing kmers in %s.' % str(name))
+			#Symetrical counting of kmers
+			countMap 	= computeKmers(args, genomepickle=None, window=[(name,target)], genomeMode=False, kmerMap=blankMap, getMeta=False, sym=True)
+			#Flatten kmer count dictionary to 1D array, and make counts proportional within each kmer length class
+			sclCounts	= flattenKmerMap(countMap, window=args.windowlen, seqLen=len(target), kmin=args.pcaMin, kmax=args.pcaMax, prop=True)
+			
+			if counter >= 1:
+				anomLabels = np.vstack([anomLabels, name])
+				anomCounts = np.vstack([anomCounts, sclCounts])
+			else:
+				anomLabels = np.array(name)
+				anomCounts = sclCounts
+			counter += 1
+
+		#Option to output arrays of counts and their labels for use in alternative dim reduce methods.
+		if args.dumpPCAdata:
+			pickle.dump(anomLabels, open(os.path.join(args.tempDir,'anomLabels'), "wb"))
+			pickle.dump(anomCounts, open(os.path.join(args.tempDir,'anomCounts'), "wb"))
+
+		#Run dimension reduction method of choice on anomaly kmer counts
+		if args.runProjection == 'PCA':
+			pca_X = PCA(n_components=3)
+			Y = pca_X.fit(anomCounts).transform(anomCounts)
+		elif args.runProjection =='TSNE':
+			Y = tsne(X=anomCounts, no_dims=3, initial_dims=50, perplexity=args.perplexity)
+			pca_X = None
+
+		if args.culster == 'DBSCAN':
+			#Run clustering. Optional.
+			dbscan = DBSCAN(eps=args.epsDBSCAN,min_samples=50).fit(Y)
+
+			if hasattr(dbscan, 'labels_'):
+				y_pred = dbscan.labels_.astype(np.int)
+			else:
+				y_pred = dbscan.predict(Y)
+
+		else:
+			y_pred = None
 
 	##########################################
 	###########  Threshold windows  ##########
@@ -968,10 +1278,14 @@ def main():
 	##########################################
 
 	#Threshold and merge anomalous features.
-	anomalies = thresholdList(allWindows,KLIthreshold,args)
+	if args.runProjection:
+		anomalies = anomWin
+	else:
+		anomalies = thresholdList(allWindows,KLIthreshold,args,threshCol=3,merge=True)
+	
 	logging.info('Detected %s features above KLI threshold.' % str(len(anomalies)))
 
-	#Mask 'N' blocks from anomalies
+	#Note: Mask 'N' blocks from anomalies
 	###if args.maskN:
 		###anomalies = anomalies.intersect(nBlocks)
 
@@ -980,42 +1294,27 @@ def main():
 	##########################################
 
 	#Write anomalies as GFF3 outfile
-	handle  = open(os.path.join(args.tempDir,args.gffOutfile), "w")
-	for i in anomaly2GFF(anomalies):
-		handle.write(i)
-	handle.close()
+	#Note: Need to incorporate cluster identity if calculated.
+	if args.gffOutfile:
+		handle  = open(os.path.join(args.tempDir,args.gffOutfile), "w")
+		for i in anomaly2GFF(anomalies): #Use category='Class_Label' to pass class
+			handle.write(i)
+		handle.close()
 	
-	#If a gff3 annotation is provided 
-	#make function def findOverlaps(args, anomBED):
+	#Find genes in anomalies if gff annotation file provided
+	#Note: Separate output for each class, if runProjection and cluster are set
 	if args.gffIn:
 		#Change default name to be query centric, ok.
 		gffOutname			= os.path.join(args.tempDir, "featuresInAnomalies_" + os.path.basename(args.gffIn))
 		features			= pybedtools.BedTool(args.gffIn).each(gffFilter, feature=args.gffFeatures)
 		extractedFeatures 	= features.window(b=anomalies, w=args.gffRange, u=True)
+		
 		if len(extractedFeatures) > 0:
 			extractedFeatures.saveas(gffOutname)
 			logging.info('Successfully extracted %s features from within %sbp of anomaly annotations.' % (str(len(extractedFeatures)), str(args.gffRange)))
+		
 		else:
 			logging.info('No features from %s detected within %s bases of anomalies.' % (args.gffIn, str(args.gffRange)))
-
-
-	##########################################
-	############ PCA on Anomalies ############
-	##########################################
-	##########################################
-	#Anomalous windows by KLI threshold without merging
-	anomWin  = thresholdList(allWindows,KLIthreshold,args,threshCol=3,merge=False)
-	anomSeqs = getBEDSeq(selfGenome,anomWin) #yields generator object
-	
-	#for name,target in anomSeqs:
-	#	computeKmers(args, None, None, target, False, blankMap)
-	#	allKmers_win =
-	#	allKmers_gen = 
-
-	#def getKLIbyKmer(winIVOM,genIVOM):
-
-	#A) Run PCA on window kmer counts
-	#B) Run PCA on window kmer KLI scores
 	
 	##########################################
 	######### Write Graphics to File #########
@@ -1049,6 +1348,12 @@ def main():
 			plt.axvline(KLIthreshold, color='r', linestyle='dashed', linewidth=2)
 		pdf.savefig()
 		plt.close()
+
+		#Compose Dim reduction scatterplot
+		if args.runProjection:
+			makeScatter(Y,args,pca_X=pca_X,y_pred=y_pred)
+			pdf.savefig()
+			plt.close()
 
 		if args.RIP:
 			plt.figure()
@@ -1096,39 +1401,28 @@ def main():
 		d['ModDate'] = datetime.datetime.today()
 
 	##Next:
-	'''	1)	Def getSeq(coords): #Feed in list of tuples / bedTool object
-				for chr,start,stop in coords:
-
-		2) 	For given sequence, get kmer counts 
-			and normalise to window len. (rowname= ) Pickle object.
+	'''	1)	Include RIP data and Class label in GFF output
 		
-		3) 	Driving Kmer report. 
-			For subset of windows rank kmers by mean IKW-KLI, print as report.
+		2)	Output features within anomalies by class
 
-		4)	Run projection (PCA, MDS). Save image.
+		3)	Fix potential div 0 bug in KLI calc when kmer absent in reference genome.
 
-		5)	Run clustering on Projection. (DBSCAN, other methods)
+		4)	Function to extract super normal windows to spike PCA.
 
-		6)	Save image to file [PCA,PCA with clusters].
-	
-		7)	Report coords for anomalies with category label in type.
-
-		8)	Function to extract super normal windows to spike PCA.
-
-		9)	Option to recycle KLI track previously calculated per scaffold >> continue to gff 
-			reports and PCA
-
-		10) Build RIP into output: * have made 'calcRIP(windowKmers)'
-
-		11)	Mask N-blocks from final merged anoms
+		5)	Mask N-blocks from final merged anoms.
 		
-		12)	 Option to return high self-scoring blocks (i.e All windows below KLI-OTSU threshold)
+		6) 	Option to return high self-scoring blocks (i.e All windows below KLI-OTSU threshold)
 			This feature to be used for mitochondrial ID test case: Train self as Mt Genome, query 
 			assembly and annotate Mt-like regions.
 
-		13)	Use hmmlearn to classifiy 1000bp window 4mer counts as self or non-self 
-			using MultinomialHMM trained on otsu thresholded 5000bp windows 
-			(use pyBEDTools to retrieve 1000bp windows contained within 5000bp windows)
+		7) 	Driving Kmer report. 
+			For subset of windows rank kmers by mean IKW-KLI, print as report.
+			(Positive control is RIP class, CpA --> TpA conversion = TA dinucleotide 
+			enrichment against background + CA depletion).
+		
+		8)	Add Jensen-Shannon Distance as alternative Distance measure.
+		
+		9)	Add verbose / quite option
 
 	'''
 	# Trace
