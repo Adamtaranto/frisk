@@ -1482,10 +1482,7 @@ def main():
 
 		2)	Graphic - Chromosome map for anomalies. Scaled to the largest chromosome.
 
-		3) 	Driving Kmer report. 
-			For subset of windows rank kmers by mean IKW-KLI, print as report.
-			(Positive control is RIP class, CpA --> TpA conversion = TA dinucleotide 
-			enrichment against background + CA depletion).
+		3) 	Driving Kmer report. For each feature class rank kmers by mean KLI score.
 		
 		4)	Add Jensen-Shannon Distance as an alternative Distance measure.
 		
