@@ -3,10 +3,11 @@
 #Version 1. Adam Taranto, July 2015
 #Contact, Adam Taranto, adam.taranto@anu.edu.au
 
-######################################################################################################################
-# Detects regions of unusual sequence composition by comparison of local kmer frequencies to whole genome abundance. #
-# For using in detecting genomic islands and potential segmental lateral gene transfer events.                       #
-######################################################################################################################
+#########################################################################################
+# Detects regions of unusual sequence composition by comparison of local kmer 			#
+# frequencies to whole genome abundance. 												#
+# For use in detection of genomic islands and segmental lateral gene transfer events.   #                             #
+#########################################################################################
 
 import argparse
 import array
@@ -20,10 +21,12 @@ import logging
 import math
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.collections import BrokenBarHCollection
 import numpy as np
 from operator import itemgetter
 import os
 import os.path
+import pandas
 import pickle
 import pybedtools
 from sklearn.decomposition import PCA
@@ -267,7 +270,7 @@ def computeKmers(args, genomepickle=None, window=None, genomeMode=False, kmerMap
 	# Prepare all maps
 	kMin    = args.minWordSize
 	kMax    = args.maxWordSize
-	#Turns out you need to redefine the dict being copied else alias edits orignal
+	#Turns out you need to redefine the dict being copied else alias edits original
 	maps    = copy.deepcopy(kmerMap)
 
 	# Iterate over sequences
@@ -316,10 +319,9 @@ def computeKmers(args, genomepickle=None, window=None, genomeMode=False, kmerMap
 	return maps
 
 def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
-	# Genomelen = genome length excluding unresolveable max-kmer space (i.e. Total bases in max len kmers that contain Ns)
-	# Input is dictionary of all kmers in current window. Should include a final dict with N count for each kmer length.
-	# Calculates weights Wi(=Counts*deg_freedom) and obs_freqs (Pi)
-
+	''' Input is a dictionary of all kmers in the current window. 
+		Should include a final dict with N count for each kmer length.
+		Calculates weights Wi(=Counts*deg_freedom) and obs_freqs (Pi)'''
 	windowlen   = args.windowlen
 	klen        = args.maxWordSize
 
@@ -410,17 +412,14 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
 def KLI(GenomeIVOM, windowIVOM, args):
 #Kullback-Leiber Index: Measure of relative entropy.
 #IVOM structure: dict[kmer][IVOM Score]
+#Negative number indicates kmer depleted in window relative to genome
+#Positive number indicates enriched in window relative to genome
 	windowKLI = 0
 	for k in windowIVOM:
 		w = float(windowIVOM[k])
-		#Note: possible div 0 error when window kmer is absent in genome population.
 		G = float(GenomeIVOM[k])
-		#print("Window IVOM: %s" % str(w))
-		#print("Genome IVOM: %s" % str(G))
-		#Negative number indicates kmer depleted in window relative to genome
-		#Positive number indicates enriched in window relative to genome
-		#Magnitude of KLI reflects degree of difference
-		windowKLI += (w*math.log((w/G),2))
+		if G != 0:
+			windowKLI += (w*math.log((w/G),2))
 		#Note: Using log2 instead of log10 to accentuate variance within small range.
 	return windowKLI
 
@@ -1365,7 +1364,7 @@ def main():
 	#Find genes in anomalies if gff annotation file provided
 	#Note: Separate output for each class, if runProjection and cluster are set
 	if args.gffIn:
-		
+
 		if args.threshTypeKLI or args.forceThresholdKLI:
 			#Change default name to be query centric, ok.
 			gffOutname			= os.path.join(args.tempDir, "featuresIn_thresholded_Anomalies_" + os.path.basename(args.gffIn))
@@ -1493,32 +1492,20 @@ def main():
 			d['ModDate'] = datetime.datetime.today()
 
 	##Next:
-	'''	1)	Include RIP data and Class label in GFF output
-		
-		2)	Output features within anomalies by class
+	'''	1)	Include Class label in GFF output.
 
-		3)	Fix potential div 0 bug in KLI calc when kmer absent in reference genome.
+		2)	Graphic - Chromosome map for anomalies. Scaled to the largest chromosome.
 
-		4)	Function to extract super normal windows to spike PCA.
-
-		5)	Mask N-blocks from final merged anoms.
-		
-		6) 	Option to return high self-scoring blocks (i.e All windows below KLI-OTSU threshold)
-			This feature to be used for mitochondrial ID test case: Train self as Mt Genome, query 
-			assembly and annotate Mt-like regions.
-
-		7) 	Driving Kmer report. 
+		3) 	Driving Kmer report. 
 			For subset of windows rank kmers by mean IKW-KLI, print as report.
 			(Positive control is RIP class, CpA --> TpA conversion = TA dinucleotide 
 			enrichment against background + CA depletion).
 		
-		8)	Add Jensen-Shannon Distance as alternative Distance measure.
+		4)	Add Jensen-Shannon Distance as an alternative Distance measure.
 		
-		9)	Add verbose / quite option
+		5)	Add verbose / quiet option
 
-		10)	Graphic - Chromosome map for anomalies. Scaled to largest chromosome.
-
-		11)	Graphic - Whole genome GC content. Anomaly GC . Same x/y axis scale.
+		6)	Graphic - Whole genome GC content histogram. Anomaly GC. Same x/y axis scale.
 
 	'''
 	# Trace
