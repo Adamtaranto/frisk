@@ -504,7 +504,18 @@ def anomaly2GFF(anomBED, **kwargs):
 	else:	
 		annotType = 'Kmer-anomaly'
 	for i in anomBED:
-		content = [str(i[0]),'frisk_' + FRISK_VERSION, annotType, str(i[1]),str(i[2]), '.', '+', '.', ';'.join(['ID=Anomaly_'+ str(n).zfill(8), 'maxKLI='+ str(i[3]),'minKLI='+ str(i[4]),'meanKLI='+ str(i[5])])]
+		content = [str(i[0]),'frisk_' + FRISK_VERSION, annotType, str(i[1]),str(i[2]), '.', '+', '.', ';'.join(['ID=Anomaly_'+ str(n).zfill(len(str(len(anomBED)))), 'maxKLI='+ str(i[3]),'minKLI='+ str(i[4]),'meanKLI='+ str(i[5])])]
+		if n == 1:
+			yield '##gff-version 3' + '\n'
+		yield '\t'.join(content) + '\n'
+		n += 1
+
+def RIP2GFF(ripBED):
+	#name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
+	n = 1
+	annotType = 'RIP'
+	for i in ripBED:
+		content = [str(i[0]),'frisk_' + FRISK_VERSION, annotType, str(i[1]),str(i[2]), '.', '+', '.', ';'.join(['ID=Anomaly_'+ str(n).zfill(len(str(len(ripBED)))),'maxKLI='+ str(i[3]),'minPI='+ str(i[4]),'maxSI='+ str(i[5]),'minCRI='+ str(i[6]),'maxCRI='+ str(i[7])])]
 		if n == 1:
 			yield '##gff-version 3' + '\n'
 		yield '\t'.join(content) + '\n'
@@ -522,6 +533,31 @@ def thresholdList(intervalList,threshold,args,threshCol=3,merge=True):
 	else:
 		anomalies = anomaliesBED
 	return anomalies
+
+def thresholdRIP(intervalList,args):
+	logging.info('Extracting RIP features: CRImin = %s, PImin = %s, SImax = %s, CRIpeak = %s \
+	' % (str(args.minCRI), str(args.minPI), str(args.maxSI), str(args.peakCRI)))
+	#Threshold windows on CRI, PI, and SI	
+	tCRImin	= [t for t in intervalList if t[6] >= args.minCRI] #Indexed from 0
+	tPImin	= [t for t in tCRImin if t[4] >= args.minPI]
+	tSImax	= [t for t in tPImin if t[5] <= args.maxSI]
+	sBasic = sorted(tSImax, key=itemgetter(0,1,2))
+	#Extract windows scoreing > peak CRI value
+	tCRIpeak = [t for t in intervalList if t[6] >= args.peakCRI]
+	sPeaks = sorted(tCRIpeak, key=itemgetter(0,1,2))
+	#name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
+	RIPbasic	= pybedtools.BedTool(sBasic).merge(d=0, c='4,5,6,7,7', o='max,min,max,min,max') #Indexed from 1
+	RIPpeaks	= pybedtools.BedTool(sPeaks)
+	#	list_idx	Bed_Idx	Field_Label
+	#	0 			[1] 	name
+	#	1 			[2] 	start
+	#	2 			[3] 	stop
+	#	3 			[4] 	windowKLI
+	#	4 			[5] 	PI
+	#	5 			[6] 	SI
+	#	6 			[7] 	CRI
+	#Return merged RIP annotations containing at least one peak CRI window.
+	return RIPbasic.window(b=RIPpeaks, w=0, u=True)
 
 def	wIndex(index, windows):
 	try:
@@ -584,7 +620,7 @@ def hmmBED2GFF(hmmBED):
 	n = 0
 	for rec in hmmBED:
 		n += 1
-		outstring = '\t'.join([rec[0],'frisk_' + FRISK_VERSION, str(rec[3]), str(rec[1]), str(rec[2]),'.', '+', '.','ID=' + rec[3] + '_' + str(n).zfill(8)]) + '\n'
+		outstring = '\t'.join([rec[0],'frisk_' + FRISK_VERSION, str(rec[3]), str(rec[1]), str(rec[2]),'.', '+', '.','ID=' + rec[3] + '_' + str(n).zfill(len(str(len(hmmBED))))]) + '\n'
 		yield outstring
 
 def flattenKmerMap(kMap, window=1, seqLen=1, kmin=1, kmax=5, prop=False):
@@ -878,8 +914,8 @@ def mainArgs():
 						help='Filename: Write hmm determined state features to gff3.')
 	parser.add_argument('--graphics',
 						type=str,
-						default='Summary_graphics.pdf',
-						help='Name of file to print graphics to.')
+						default=None,
+						help='Name of file to print summary graphics to.')
 
 	#Output options
 	parser.add_argument('--mergeDist',
@@ -941,7 +977,7 @@ def mainArgs():
 
 	#Thresholding options for KLI
 	parser.add_argument('--threshTypeKLI',
-						default='None',
+						default= None,
 						choices=[None, 'percentile', 'otsu'],
 						help='Options for defining non-self threshold on window KLI scores: Otsu binarisation, 2-state HMM, percentile.')
 	parser.add_argument('--percentileKLI',
@@ -966,10 +1002,30 @@ def mainArgs():
 						default=False,
 						help='Calculate and report RIP indicies for all windows + report GFF3 location \
 						of RIP features, using same thresholding method options as for kmer anomalies.')
-	parser.add_argument('--threshTypeRIP',
-						default='percentile',
-						choices=[None, 'percentile', 'otsu','hmm'],
-						help='Options for defining non-self threshold on window KLI scores: Otsu binarisation, 2-state HMM, percentile.')
+	parser.add_argument('--RIPgff',
+						type=str,
+						default='RIP_annotation.gff3',
+						help='Export RIP annotation track as gff3.')
+	parser.add_argument('--minCRI',
+						type=float,
+						default=0.0,
+						help='Return windows where CRI score > than this value.'
+						)
+	parser.add_argument('--peakCRI',
+						type=float,
+						default=1.0,
+						help='Require that merged annotations contain at least one window with a CRI score above this score.'
+						)
+	parser.add_argument('--minPI',
+						type=float,
+						default=1.0,
+						help='Return windows where Product Index score > than this value.'
+						)
+	parser.add_argument('--maxSI',
+						type=float,
+						default=1.0,
+						help='Return windows where Substrate Index score < than this value.'
+						)
 	
 	#Dimentionality Reduction Stuff
 	parser.add_argument('--runProjection',
@@ -1010,6 +1066,7 @@ def mainArgs():
 						help='Set eps value for DBSCAN, will attempt to cluster points < eps apart. Note: Typically smaller for PCA (0.01 - 3.0), than for t-SNE (5-20).')
 
 	#Revise feature boundaries using HMM split track with reduced window and increment size
+	#Note: Not yet implemented
 	parser.add_argument('--updateHMM',
 						action='store_true',
 						default=False,
@@ -1166,7 +1223,7 @@ def main():
 	else:
 		optBins = FDBins(logKLI)
 	
-	if args.threshTypeKLI:
+	if args.threshTypeKLI or args.forceThresholdKLI:
 		#Check for user specified KLI threshold
 		if args.forceThresholdKLI:
 			KLIthreshold = np.log10(float(args.forceThresholdKLI))
@@ -1185,7 +1242,7 @@ def main():
 				logging.info('Optimal log10(KLI) threshold = %s' % str(KLIthreshold))
 
 		#Optional set threshold at percentile
-		else:
+		elif args.threshTypeKLI == 'percentile':
 			KLIthreshold = np.percentile(logKLI, args.percentileKLI)
 			logging.info('Setting threshold at %s percentile of log10(KLI)= %s' % (str(args.percentileKLI),str(KLIthreshold)))
 
@@ -1203,14 +1260,11 @@ def main():
 		model.fit(dataKLI) #Note: Ideally pass all scaffold data sequences in separately
 		#Use model to prdict HMM state for all scaffolds
 		hmmBED	= hmm2BED(allWindows,model,dataCol=3)
-		
-		#Note:Add merge support to hmmBED2GFF
 		#Write hmm states as GFF3 outfile
 		handle = open(os.path.join(args.tempDir,args.hmmOutfile),"w")
 		for i in hmmBED2GFF(hmmBED):
 			handle.write(i)
 		handle.close()
-
 
 	####################################################
 	############## Dimensionality reduction ############
@@ -1280,10 +1334,10 @@ def main():
 	#Threshold and merge anomalous features.
 	if args.runProjection:
 		anomalies = anomWin
-	else:
+		logging.info('Detected %s features above KLI threshold.' % str(len(anomalies)))
+	elif KLIthreshold:
 		anomalies = thresholdList(allWindows,KLIthreshold,args,threshCol=3,merge=True)
-	
-	logging.info('Detected %s features above KLI threshold.' % str(len(anomalies)))
+		logging.info('Detected %s features above KLI threshold.' % str(len(anomalies)))
 
 	#Note: Mask 'N' blocks from anomalies
 	###if args.maskN:
@@ -1300,105 +1354,143 @@ def main():
 		for i in anomaly2GFF(anomalies): #Use category='Class_Label' to pass class
 			handle.write(i)
 		handle.close()
+
+	if args.RIP:
+		RIPbed	= thresholdRIP(allWindows,args) #name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
+		handle  = open(os.path.join(args.tempDir,args.RIPgff), "w")
+		for i in RIP2GFF(RIPbed): 
+			handle.write(i)
+		handle.close()
 	
 	#Find genes in anomalies if gff annotation file provided
 	#Note: Separate output for each class, if runProjection and cluster are set
 	if args.gffIn:
-		#Change default name to be query centric, ok.
-		gffOutname			= os.path.join(args.tempDir, "featuresInAnomalies_" + os.path.basename(args.gffIn))
-		features			= pybedtools.BedTool(args.gffIn).each(gffFilter, feature=args.gffFeatures)
-		extractedFeatures 	= features.window(b=anomalies, w=args.gffRange, u=True)
 		
-		if len(extractedFeatures) > 0:
-			extractedFeatures.saveas(gffOutname)
-			logging.info('Successfully extracted %s features from within %sbp of anomaly annotations.' % (str(len(extractedFeatures)), str(args.gffRange)))
-		
-		else:
-			logging.info('No features from %s detected within %s bases of anomalies.' % (args.gffIn, str(args.gffRange)))
-	
+		if args.threshTypeKLI or args.forceThresholdKLI:
+			#Change default name to be query centric, ok.
+			gffOutname			= os.path.join(args.tempDir, "featuresIn_thresholded_Anomalies_" + os.path.basename(args.gffIn))
+			features			= pybedtools.BedTool(args.gffIn).each(gffFilter, feature=args.gffFeatures)
+			extractedFeatures 	= features.window(b=anomalies, w=args.gffRange, u=True)
+			
+			if len(extractedFeatures) > 0:
+				extractedFeatures.saveas(gffOutname)
+				logging.info('Successfully extracted %s features from within %sbp of anomaly annotations.' % (str(len(extractedFeatures)), str(args.gffRange)))
+			
+			else:
+				logging.info('No features from %s detected within %s bases of anomalies.' % (args.gffIn, str(args.gffRange)))
+
+		if args.hmmKLI:
+
+			#State1 and State2 live here
+			hmmOutputFile = os.path.join(args.tempDir,args.hmmOutfile)
+
+			gffOutname1			= os.path.join(args.tempDir, "featuresIn_hmm_State1_" + os.path.basename(args.gffIn))
+			bedState1			= pybedtools.BedTool(hmmOutputFile).each(gffFilter, feature='State1')
+			features1			= pybedtools.BedTool(args.gffIn).each(gffFilter, feature=args.gffFeatures)
+			extractedFeatures1 	= features1.window(b=bedState1, w=args.gffRange, u=True)
+
+			gffOutname2			= os.path.join(args.tempDir, "featuresIn_hmm_State2_" + os.path.basename(args.gffIn))
+			bedState2			= pybedtools.BedTool(hmmOutputFile).each(gffFilter, feature='State2')
+			features2			= pybedtools.BedTool(args.gffIn).each(gffFilter, feature=args.gffFeatures)
+			extractedFeatures2 	= features2.window(b=bedState2, w=args.gffRange, u=True)
+			
+			if len(extractedFeatures1) > 0:
+				extractedFeatures1.saveas(gffOutname1)
+				logging.info('Successfully extracted %s features from within %sbp of State1 hmm annotations.' % (str(len(extractedFeatures1)), str(args.gffRange)))
+			
+			else:
+				logging.info('No features from %s detected within %s bases of State1 hmm features.' % (args.gffIn, str(args.gffRange)))
+
+			if len(extractedFeatures2) > 0:
+				extractedFeatures2.saveas(gffOutname2)
+				logging.info('Successfully extracted %s features from within %sbp of State2 hmm annotations.' % (str(len(extractedFeatures2)), str(args.gffRange)))
+			
+			else:
+				logging.info('No features from %s detected within %s bases of State2 hmm features.' % (args.gffIn, str(args.gffRange)))
+
 	##########################################
 	######### Write Graphics to File #########
 	##########################################
 	##########################################
+	if args.graphics:
+		logging.info('Writing graphics to %s' % args.graphics)
 
-	logging.info('Writing graphics to %s' % args.graphics)
-
-	with PdfPages(os.path.join(args.tempDir,args.graphics)) as pdf:
-		plt.figure()
-		plt.title('Raw KLI Distribution')
-		sns.set(color_codes=True)
-		sns.distplot(allKLI, hist=True, bins=optBins, kde=False, rug=False, color="b")
-		pdf.savefig()  # saves the current figure into a pdf page
-		plt.close()
-
-		plt.figure()
-		plt.title('log10(KLI) Distribution Optimized Bins')
-		sns.set(color_codes=True)
-		sns.distplot(logKLI, hist=True, bins=optBins, kde=False, rug=False, color="b")
-		if KLIthreshold:
-			plt.axvline(KLIthreshold, color='r', linestyle='dashed', linewidth=2)
-		pdf.savefig()
-		plt.close()
-
-		plt.figure()
-		plt.title('log10(KLI) Distribution Fine Bins')
-		sns.set(color_codes=True)
-		sns.distplot(logKLI, hist=True, bins=100, kde=False, rug=False, color="b")
-		if KLIthreshold:
-			plt.axvline(KLIthreshold, color='r', linestyle='dashed', linewidth=2)
-		pdf.savefig()
-		plt.close()
-
-		#Compose Dim reduction scatterplot
-		if args.runProjection:
-			makeScatter(Y,args,pca_X=pca_X,y_pred=y_pred)
-			pdf.savefig()
+		with PdfPages(os.path.join(args.tempDir,args.graphics)) as pdf:
+			plt.figure()
+			plt.title('Raw KLI Distribution')
+			sns.set(color_codes=True)
+			sns.distplot(allKLI, hist=True, bins=optBins, kde=False, rug=False, color="b")
+			pdf.savefig()  # saves the current figure into a pdf page
 			plt.close()
 
-		if args.RIP:
 			plt.figure()
-			plt.title('RIP Product Index')
+			plt.title('log10(KLI) Distribution Optimized Bins')
 			sns.set(color_codes=True)
-			sns.distplot(PI, hist=True, bins=100, kde=False, rug=False, color="b")
+			sns.distplot(logKLI, hist=True, bins=optBins, kde=False, rug=False, color="b")
+			if KLIthreshold:
+				plt.axvline(KLIthreshold, color='r', linestyle='dashed', linewidth=2)
 			pdf.savefig()
 			plt.close()
 
 			plt.figure()
-			plt.title('RIP Substrate Index')
+			plt.title('log10(KLI) Distribution Fine Bins')
 			sns.set(color_codes=True)
-			sns.distplot(SI, hist=True, bins=100, kde=False, rug=False, color="b")
+			sns.distplot(logKLI, hist=True, bins=100, kde=False, rug=False, color="b")
+			if KLIthreshold:
+				plt.axvline(KLIthreshold, color='r', linestyle='dashed', linewidth=2)
 			pdf.savefig()
 			plt.close()
 
-			plt.figure()
-			plt.title('Composite RIP Index')
-			sns.set(color_codes=True)
-			sns.distplot(CRI, hist=True, bins=100, kde=False, rug=False, color="b")
-			pdf.savefig()
-			plt.close()
+			#Compose Dim reduction scatterplot
+			if args.runProjection:
+				makeScatter(Y,args,pca_X=pca_X,y_pred=y_pred)
+				pdf.savefig()
+				plt.close()
 
-			plt.figure()
-			plt.title('Square Composite RIP Index')
-			sns.set(color_codes=True)
-			sns.distplot(sqrCRI, hist=True, bins=100, kde=False, rug=False, color="b")
-			pdf.savefig()
-			plt.close()
+			if args.RIP:
+				plt.figure()
+				plt.title('RIP Product Index')
+				sns.set(color_codes=True)
+				sns.distplot(PI, hist=True, bins=100, kde=False, rug=False, color="b")
+				pdf.savefig()
+				plt.close()
 
-			plt.figure()
-			plt.title('log10 Composite RIP Index')
-			sns.set(color_codes=True)
-			sns.distplot(logCRI, hist=True, bins=100, kde=False, rug=False, color="b")
-			pdf.savefig()
-			plt.close()
+				plt.figure()
+				plt.title('RIP Substrate Index')
+				sns.set(color_codes=True)
+				sns.distplot(SI, hist=True, bins=100, kde=False, rug=False, color="b")
+				pdf.savefig()
+				plt.close()
 
-		# Set the file's metadata via the PdfPages object:
-		d = pdf.infodict()
-		d['Title'] = 'Frisk: KLI Distribution Summary'
-		d['Author'] = u'Frisk v0.0.1'
-		d['Subject'] = 'Summary graphics'
-		d['Keywords'] = 'histogram'
-		d['CreationDate'] = datetime.datetime.today()
-		d['ModDate'] = datetime.datetime.today()
+				plt.figure()
+				plt.title('Composite RIP Index')
+				sns.set(color_codes=True)
+				sns.distplot(CRI, hist=True, bins=100, kde=False, rug=False, color="b")
+				pdf.savefig()
+				plt.close()
+
+				plt.figure()
+				plt.title('Square Composite RIP Index')
+				sns.set(color_codes=True)
+				sns.distplot(sqrCRI, hist=True, bins=100, kde=False, rug=False, color="b")
+				pdf.savefig()
+				plt.close()
+
+				plt.figure()
+				plt.title('log10 Composite RIP Index')
+				sns.set(color_codes=True)
+				sns.distplot(logCRI, hist=True, bins=100, kde=False, rug=False, color="b")
+				pdf.savefig()
+				plt.close()
+
+			# Set the file's metadata via the PdfPages object:
+			d = pdf.infodict()
+			d['Title'] = 'Frisk: KLI Distribution Summary'
+			d['Author'] = u'Frisk v0.0.1'
+			d['Subject'] = 'Summary graphics'
+			d['Keywords'] = 'histogram'
+			d['CreationDate'] = datetime.datetime.today()
+			d['ModDate'] = datetime.datetime.today()
 
 	##Next:
 	'''	1)	Include RIP data and Class label in GFF output
@@ -1423,6 +1515,10 @@ def main():
 		8)	Add Jensen-Shannon Distance as alternative Distance measure.
 		
 		9)	Add verbose / quite option
+
+		10)	Graphic - Chromosome map for anomalies. Scaled to largest chromosome.
+
+		11)	Graphic - Whole genome GC content. Anomaly GC . Same x/y axis scale.
 
 	'''
 	# Trace
