@@ -73,20 +73,18 @@ def findBaseRanges(s, ch, name=None, minlen=0):
 		if (group[-1] - group[0]) < minlen:
 			continue
 		else:
-			if name:#Note: Might need to +1 to positions for bedtools coords that are not zero indexed
+			if name:
 				ranges.append((name, group[0], group[-1]))
 			else:
 				ranges.append((group[0], group[-1]))
 	return ranges #Format = [('ScaffName,start,stop'),('ScaffName,start,stop')]
 
 def countN(sequence):
-	#Count number of ATGC and non-ATGC bases in sequence string
+	"""Count number of ATGC and non-ATGC bases in sequence string"""
 	count  		= 0
 	countN 		= 0
 	baseTally 	= Counter()
-
 	baseTally += Counter(sequence)
-
 	for i in baseTally:
 		if i not in LETTERS:
 			countN 	+= baseTally[i]
@@ -96,7 +94,6 @@ def countN(sequence):
 	return (count,countN)
 
 def iterFasta(path):
-	#path = location of fasta to be processed
 	"""Iterates over the sequences of a fasta file"""
 	logging.info("Loading fasta files from %s" % path)
 	name = None
@@ -110,15 +107,14 @@ def iterFasta(path):
 		if not line:
 			continue
 		if line.startswith(">"):
-			#If this is the >= 2nd title then first seq has been read and it is time to yield 
-			if name:
+			if name: #then first seq has been read and it is time to yield 
 				yield (name, ''.join(seq))
-			#Update the name to current seq and blank the list
+			#Update the name to current seq and blank the sequence
 			name = line.strip('>').split()[0]
 			seq = []
 		else:
 			#Extend the current sequence with uppercase sequence
-			#Perhaps it should be an option to ignore masked sequences (may want to mask isochores or transposons?)
+			#Note: Could break on masked regions to exclude them from global training set.
 			seq.append(line.upper())
 	if name:
 		#Yield the final sequence at end of file.
@@ -140,13 +136,10 @@ def getBEDSeq(fastaDict,BEDintervals):
 	"""Given BED object with scaffold coordinates, 
 		fetch sequence from dictionary of sequences, keyed by scaffold name. """
 	for rec in BEDintervals:
-		print rec
 		if rec[0] in fastaDict:
 			logging.info('From %s try get range %s to %s.' % (rec[0], str(int(rec[1])), str(int(rec[2]))))
 			seq = fastaDict[rec[0]][int(rec[1])-1:int(rec[2])]
-			print len(seq)
 			name = ":".join([rec[0],str(rec[1]),str(rec[2])])
-			print name
 			if len(seq) > 0:
 				yield (name,seq)
 			else: 
@@ -225,7 +218,7 @@ def prepareMaps(k, maxk, kmers):
 	return prepareMaps(k + 1, maxk, kmers)
 
 def rangeMaps(kMin,kMax):
-	#Calls prepareMaps to write list of kmer dictionaries for range kmin to kmax
+	"""Calls prepareMaps to write list of kmer dictionaries for range kmin to kmax"""
 	maps    = []
 	logging.info('Preparing kmer maps')
 	#Prepare possible kmer combinations for each len k
@@ -238,7 +231,8 @@ def revComplement(kmer):
 	return revcompl(kmer)
 
 def computeKmers(args, genomepickle=None, window=None, genomeMode=False, kmerMap=None, getMeta=True, sym=False):
-	
+	"""	Compute the kmer counts throughout the kmer range for a sequence or collection of sequences, 
+		optionally write the output to file."""
 	#args					'arguments object'
 	#genomepickle=None		'If run in genome mode dump kmer map to this file'
 	#window=None			'tuple(windowID,Seq)'
@@ -246,9 +240,6 @@ def computeKmers(args, genomepickle=None, window=None, genomeMode=False, kmerMap
 	#kmerMap=None			'Blank kmer map - list of dictionaries'
 	#getMeta=True			'Store metadata in final output: SeqLen, excluded maxmers, N's in seq'
 	#sym=False				'Calculate kmers symmetrically - as double stranded seq'
-
-	"""Compute the kmer counts throughout the kmer range for the complete genome, and
-	write the output to a file."""
 
 	if sum(kmerMap[0].itervalues()) != 0:
 		logging.info('kmer template is not blank!')
@@ -270,9 +261,8 @@ def computeKmers(args, genomepickle=None, window=None, genomeMode=False, kmerMap
 	# Prepare all maps
 	kMin    = args.minWordSize
 	kMax    = args.maxWordSize
-	#Turns out you need to redefine the dict being copied else alias edits original
+	#Redefine the blank kmer dict being to avoid edits to the original
 	maps    = copy.deepcopy(kmerMap)
-
 	# Iterate over sequences
 	nSeqs   = 0
 	# Read (name, sequence) tuple
@@ -325,8 +315,7 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
 	windowlen   = args.windowlen
 	klen        = args.maxWordSize
 
-	#Note: Revisit appropriate measure of survey size for kmer observations
-	#Perhaps readable Maxmers in seq - N-containg maxmers in seq??
+	#Note: Alternative define total genome space as total readable number of maxmers.
 	genomeSpace = GenomeKmers[klen]['totalLen'] - GenomeKmers[klen+2]['nnTotal']
 	windowSpace = windowKmers[klen]['totalLen'] - windowKmers[klen+2]['nnTotal']
 
@@ -335,12 +324,10 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
 	storeMaxMerIVOM = dict()
 	#For each max len kmer
 	for k in windowKmers[klen-1]:
-		#Skip kmers that do not occur in window
+		#Skip kmers that do not occur in window - this could be more efficient.
 		if windowKmers[klen-1][k] == 0:
 			continue
-		#print k
 		count = windowKmers[klen-1][k]
-		#print count
 		subKmers['w'] = dict()
 		subKmers['p'] = dict()
 
@@ -350,7 +337,7 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
 				if x == klen:
 					#Note:Weighting could probably be achieved by observations multiplied by kmerlen squared i.e. count * x**2
 					subKmers['w'][x] = count * 4**x # kmer_count * (DNA bases^seqlength)
-					#Note: Should probability of observing x count of k be = total available non-N k-units in window?
+					#Note: Should probability of observing x count of k be = x /total available non-N kmers in window?
 					subKmers['p'][x] = float(count) / ((windowSpace-(x-1)) * 2)
 				elif x >= 2:
 					subK = k[0:x] #Grab the first x bases in maxmer
@@ -399,10 +386,10 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
 				kmerIVOM[x] = scaledW[x] * subKmers['p'][x] + ((1-scaledW[x]) * kmerIVOM[x-1])
 
 		storeMaxMerIVOM[k] = kmerIVOM[klen]
-		#Note: In Genome mode 'window' is equal to whole genome length (minus length of 'N'-containing maxmers).
+		#Note: In Genome mode 'window' is eqivalent to whole readable genome space.
 		sumWindowIVOM += kmerIVOM[klen]
 
-	#Rescale each kmer from 0 to 1 (cause relative entropy)
+	#Rescale each kmer from 0 to 1 (because relative entropy)
 	for k in storeMaxMerIVOM:
 		storeMaxMerIVOM[k] = float(storeMaxMerIVOM[k]) / sumWindowIVOM
 
@@ -410,10 +397,11 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
 	return storeMaxMerIVOM
 
 def KLI(GenomeIVOM, windowIVOM, args):
-#Kullback-Leiber Index: Measure of relative entropy.
-#IVOM structure: dict[kmer][IVOM Score]
-#Negative number indicates kmer depleted in window relative to genome
-#Positive number indicates enriched in window relative to genome
+	"""	Kullback-Leiber Index: Measure of relative entropy between sets of
+		probability distributions."""
+	#IVOM structure: dict[kmer][IVOM Score]
+	#Negative number indicates kmer depleted in window relative to genome
+	#Positive number indicates enriched in window relative to genome
 	windowKLI = 0
 	for k in windowIVOM:
 		w = float(windowIVOM[k])
@@ -424,6 +412,9 @@ def KLI(GenomeIVOM, windowIVOM, args):
 	return windowKLI
 
 def calcRIP(windowKmers):
+	"""	Calculate measures of Repeat Induced Point mutation (RIP);
+		a process in fungal genomes which affects CpA --> TpA
+		transition mutations. """
 	#Product Index
 	if windowKmers[1]['AT'] > 0:
 		PI = windowKmers[1]['TA'] / float(windowKmers[1]['AT'])
@@ -443,6 +434,7 @@ def calcRIP(windowKmers):
 	return (PI,SI,CRI)
 
 def makePicklePath(args,**kwargs):
+	""" Generate pathname for export of genome kmer counts or window KLI scores. """
 	pathbase = os.path.basename(args.hostSeq)
 	if kwargs['space'] == 'genome':
 		pickleOut = os.path.join(args.tempDir,pathbase + "_kmers_" +str(args.minWordSize) + "_" + str(args.maxWordSize) + "_" + kwargs['space'] + '.p')
@@ -451,7 +443,7 @@ def makePicklePath(args,**kwargs):
 	return pickleOut
 
 def FDBins(data):
-	#Freedman-Diaconis method for calculating optimal number of bins for dataset
+	"""	Freedman-Diaconis method for calculating optimal number of bins for dataset."""
 	IQR 	= np.subtract(*np.percentile(data, [75, 25])) #Magic '*' unpacks tuple and passes two values to subtract function.
 	bins 	= 2 * IQR * math.pow(len(data),(1.0/3.0)) #Number of bins
 	bins 	= int(round(bins)) #Otsu needs rounded integer
@@ -488,9 +480,8 @@ def otsu(data,optBins):
 	return otsuNum
 
 def gffFilter(rec, **kwargs):
-	#Given list of feature types
+	"""	Given list of feature types return GFF3 records that match type."""
 	if 'feature' in kwargs.keys():
-		#return GFF3 records that match type
 		if rec[2] in kwargs['feature']:
 			return rec
 	else:
@@ -574,7 +565,8 @@ def meanRangeLen(l):
 	return mean	
 
 def updateHMM(smallHMM, bigThresh): #BED interval objects. A = Fine scale guide, B = Starting annotations
-	'''Update annotation boundaries in B using nearest interval boundary in A.'''
+	'''Update annotation boundaries in B using nearest interval boundary in A.
+		Note: Not currently in use.'''
 	hmmBounds = dict()
 	for i in smallHMM:
 		if i[0] not in hmmBounds:
@@ -717,12 +709,12 @@ def x2p(X = np.array([]), tol = 1e-5, perplexity = 30.0):
 def pca(X = np.array([]), no_dims = 50):
 	"""Runs PCA on the NxD array X in order to reduce its
 	 dimensionality to no_dims dimensions."""
-	logging.info("Preprocessing the data using PCA...")
-	(n, d) 	= X.shape;
-	X 		= X - np.tile(np.mean(X, 0), (n, 1));
-	(l, M) 	= np.linalg.eig(np.dot(X.T, X));
-	Y 		= np.dot(X, M[:,0:no_dims]);
-	return Y;
+	logging.info("Preprocessing the data for t-SNE using PCA...")
+	(n, d) 	= X.shape
+	X 		= X - np.tile(np.mean(X, 0), (n, 1))
+	(l, M) 	= np.linalg.eig(np.dot(X.T, X))
+	Y 		= np.dot(X, M[:,0:no_dims])
+	return Y
 
 
 def tsne(X = np.array([]), no_dims = 2, initial_dims = 50, perplexity = 30.0):
@@ -754,7 +746,7 @@ def tsne(X = np.array([]), no_dims = 2, initial_dims = 50, perplexity = 30.0):
 	P = x2p(X, 1e-5, perplexity);
 	P = P + np.transpose(P);
 	P = P / np.sum(P);
-	P = P * 4;									# early exaggeration
+	P = P * 4;	# early exaggeration
 	P = np.maximum(P, 1e-12);
 	
 	# Run iterations
@@ -1095,7 +1087,6 @@ def main():
 	##########################################
 	########## Initial housekeeping ##########
 	##########################################
-	##########################################
 	
 	#Note: Move a lot of this off to class object
 	logging.basicConfig(level=logging.INFO, format=("%(asctime)s - %(funcName)s - %(message)s"))
@@ -1321,7 +1312,6 @@ def main():
 				y_pred = dbscan.labels_.astype(np.int)
 			else:
 				y_pred = dbscan.predict(Y)
-
 		else:
 			y_pred = None
 
@@ -1337,10 +1327,6 @@ def main():
 	elif KLIthreshold:
 		anomalies = thresholdList(allWindows,KLIthreshold,args,threshCol=3,merge=True)
 		logging.info('Detected %s features above KLI threshold.' % str(len(anomalies)))
-
-	#Note: Mask 'N' blocks from anomalies
-	###if args.maskN:
-		###anomalies = anomalies.intersect(nBlocks)
 
 	##########################################
 	######## Write windows to GFF3 out #######
