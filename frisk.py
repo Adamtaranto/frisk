@@ -4,9 +4,9 @@
 #Contact, Adam Taranto, adam.taranto@anu.edu.au
 
 #########################################################################################
-# Detects regions of unusual sequence composition by comparison of local kmer 			#
-# frequencies to whole genome abundance. 												#
-# For use in detection of genomic islands and segmental lateral gene transfer events.   #                             #
+# Detects regions of unusual sequence composition by comparison of local kmer           #
+# frequencies to whole genome abundance.                                                #
+# For use in detection of genomic islands and segmental lateral gene transfer events.   #
 #########################################################################################
 
 import argparse
@@ -34,7 +34,7 @@ from sklearn.cluster import DBSCAN
 from scipy import stats
 import seaborn as sns
 import sys
-import versioneer
+#import versioneer
 
 #######################
 #######################
@@ -48,7 +48,6 @@ import versioneer
 #del get_versions
 
 FRISK_VERSION = '0.0.2' 
-
 LETTERS = ('A', 'T', 'G', 'C')
 
 #######################
@@ -511,6 +510,15 @@ def RIP2GFF(ripBED):
 		yield '\t'.join(content) + '\n'
 		n += 1
 
+def hmmBED2GFF(hmmBED):
+	n = 1
+	for rec in hmmBED:
+		outstring = '\t'.join([rec[0],'frisk_' + FRISK_VERSION, str(rec[3]), str(rec[1]), str(rec[2]),'.', '+', '.','ID=' + rec[3] + '_' + str(n).zfill(len(str(len(hmmBED))))]) + '\n'
+		if n == 1:
+			yield '##gff-version 3' + '\n'
+		yield outstring
+		n += 1
+
 def thresholdList(intervalList,threshold,args,threshCol=3,merge=True):
 	if args.findSelf:
 		tItems = [t for t in intervalList if np.log10(t[3]) <= threshold]
@@ -607,13 +615,6 @@ def range2interval(rangeList, scaffoldWindows, state):
 	for block in rangeList:
 		yield (scaffoldWindows[0][0],int(scaffoldWindows[block[0]][1]),int(scaffoldWindows[block[1]][2]),state)
 
-def hmmBED2GFF(hmmBED):
-	n = 0
-	for rec in hmmBED:
-		n += 1
-		outstring = '\t'.join([rec[0],'frisk_' + FRISK_VERSION, str(rec[3]), str(rec[1]), str(rec[2]),'.', '+', '.','ID=' + rec[3] + '_' + str(n).zfill(len(str(len(hmmBED))))]) + '\n'
-		yield outstring
-
 def flattenKmerMap(kMap, window=1, seqLen=1, kmin=1, kmax=5, prop=False):
 	'''Takes kmer count map (nested dict), flattens dictionaries to an array
 		and scales counts to a standard window length.'''
@@ -705,7 +706,6 @@ def x2p(X = np.array([]), tol = 1e-5, perplexity = 30.0):
 		logging.info("Mean value of sigma: %s" % str(np.mean(np.sqrt(1 / beta))))
 	return P;
 
-
 def pca(X = np.array([]), no_dims = 50):
 	"""Runs PCA on the NxD array X in order to reduce its
 	 dimensionality to no_dims dimensions."""
@@ -715,7 +715,6 @@ def pca(X = np.array([]), no_dims = 50):
 	(l, M) 	= np.linalg.eig(np.dot(X.T, X))
 	Y 		= np.dot(X, M[:,0:no_dims])
 	return Y
-
 
 def tsne(X = np.array([]), no_dims = 2, initial_dims = 50, perplexity = 30.0):
 	"""Runs t-SNE on the dataset in the NxD array X to reduce its dimensionality to no_dims dimensions.
@@ -1117,6 +1116,7 @@ def main():
 	#########  Import or Calculate   #########
 	#########   Genome kmer Counts   #########
 	##########################################
+	
 	#Check if genome kmer dict previously generated
 	if os.path.isfile(genomepickle) and args.recalc:
 		logging.info('Importing previously calculated genome kmers from %s' % genomepickle)
