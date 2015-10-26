@@ -65,6 +65,7 @@ target/
 .DS_Store
 
 #Testing stuff
+gh-pages/
 data/
 temp/
 sandpit/
