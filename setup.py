@@ -15,6 +15,7 @@ install_requires = [
     "seaborn",
     "hmmlearn",
     "pybedtools",
+    "scikit-learn",
 ]
 
 test_requires = [
