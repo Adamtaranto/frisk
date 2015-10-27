@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from setuptools import setup
+import versioneer
 
 desc = """
 frisk: Detection of sequence composition anomalies using multiple order kmers.
@@ -33,9 +34,8 @@ pypi_classifiers = [
 setup(
     name="frisk",
     py_modules=['frisk', ],
-    version='0.1.0',
-    #version=versioneer.get_version(),
-    #cmdclass=versioneer.get_cmdclass(),
+    version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
     install_requires=install_requires,
     tests_require=test_requires,
     description=desc,
