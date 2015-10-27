@@ -34,7 +34,6 @@ from sklearn.cluster import DBSCAN
 from scipy import stats
 import seaborn as sns
 import sys
-#import versioneer
 
 #######################
 #######################
@@ -42,12 +41,11 @@ import sys
 #######################
 #######################
 
-#from ._version import get_versions
-#__version__ = get_versions()['version']
-#FRISK_VERSION = get_versions()['version']
-#del get_versions
+from ._version import get_versions
+__version__ = get_versions()['version']
+FRISK_VERSION = get_versions()['version']
+del get_versions
 
-FRISK_VERSION = '0.0.2' 
 LETTERS = ('A', 'T', 'G', 'C')
 
 #######################
