@@ -1493,6 +1493,3 @@ def main():
 	'''
 	# Trace
 	logging.info('Finished!')
-
-if __name__ == '__main__':
-	main()
