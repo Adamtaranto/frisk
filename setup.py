@@ -35,7 +35,6 @@ setup(
     name="frisk",
     py_modules=['frisk', ],
     version=versioneer.get_version(),
-    cmdclass=versioneer.get_cmdclass(),
     install_requires=install_requires,
     tests_require=test_requires,
     description=desc,
