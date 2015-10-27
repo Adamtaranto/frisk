@@ -8,11 +8,13 @@ frisk: Detection of sequence composition anomalies using multiple order kmers.
 
 install_requires = [
     "numpy",
-    "pybedtools",
+    "scipy",
+    "cython",
     "pandas",
     "matplotlib",
-    "scipy",
     "seaborn",
+    "hmmlearn",
+    "pybedtools",
 ]
 
 test_requires = [
@@ -43,4 +45,9 @@ setup(
     url="https://github.com/Adamtaranto/frisk",
     keywords=["kmer"],
     classifiers=pypi_classifiers,
+    entry_points={
+        'console_scripts': [
+            'frisk=frisk:main',
+        ],
+    },
 )
