@@ -864,7 +864,10 @@ def makeScatter(Y,args,pca_X=None,y_pred=None):
 def mainArgs():
     """Process command-line arguments"""
 
-    parser = argparse.ArgumentParser(description='Calculate all kmers in a given sequence')
+    parser = argparse.ArgumentParser(
+        description='Calculate all kmers in a given sequence',
+        prog='frisk',
+    )
 
     # Inputs
     parser.add_argument('-H',
