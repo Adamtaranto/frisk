@@ -35,7 +35,7 @@ pypi_classifiers = [
 
 setup(
     name="frisk",
-    py_modules=['frisk', ],
+    packages=['frisk', ],
     version=versioneer.get_version(),
     install_requires=install_requires,
     tests_require=test_requires,
