@@ -1,1 +1,2 @@
-_version.py export-subst
+_version.py         export-subst
+docs/gitversion.py  export-subst
