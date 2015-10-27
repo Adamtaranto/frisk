@@ -9,6 +9,7 @@
 # For use in detection of genomic islands and segmental lateral gene transfer events.   #
 #########################################################################################
 
+from __future__ import print_function, division, absolute_import
 import argparse
 import array
 from collections import Counter
@@ -1086,6 +1087,7 @@ def main():
 	##########################################
 	
 	#Note: Move a lot of this off to class object
+	print('frisk --', FRISK_VERSION)
 	logging.basicConfig(level=logging.INFO, format=("%(asctime)s - %(funcName)s - %(message)s"))
 	args = mainArgs()
 	#Set tempdir for pybedtools
