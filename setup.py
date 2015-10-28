@@ -22,9 +22,9 @@ frisk: Detection of sequence composition anomalies using multiple order kmers.
 """
 
 install_requires = [
-    "numpy",
-    "scipy",
-    "cython",
+    "numpy>=1.10",
+    "scipy>=0.16",
+    "cython>=0.23",
     "pandas",
     "matplotlib",
     "seaborn",
