@@ -854,6 +854,9 @@ def mainArgs():
         prog='frisk',
     )
 
+    parser.add_argument('--version', 
+                        action='version', 
+                        version='frisk --' + str(FRISK_VERSION))
     # Inputs
     parser.add_argument('-H',
                         '--hostSeq',
@@ -1073,13 +1076,12 @@ def main():
     ##########################################
     ########## Initial housekeeping ##########
     ##########################################
-
+    
     #Note: Move a lot of this off to class object
-    print('frisk --', FRISK_VERSION)
     logging.basicConfig(level=logging.INFO, format=("%(asctime)s - %(funcName)s - %(message)s"))
     args = mainArgs()
-    # Set tempdir for pybedtools
-    # pybedtools.set_tempdir(args.tempDir)
+    print('frisk --', FRISK_VERSION)
+    
     # Make path to store genome kmer calculations
     genomepickle 	= makePicklePath(args, space='genome')
     # Make path to store window KLI calculations
