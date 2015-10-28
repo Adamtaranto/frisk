@@ -5,8 +5,8 @@
 SPHINXOPTS    =
 SPHINXBUILD   = sphinx-build
 PAPER         =
-BUILDDIR      = ../gh-pages/html
-rtd_BUILDDIR  = _build
+BUILDDIR = _build
+GHPAGES_BUILDIR = ../gh-pages/html
 
 # User-friendly check for sphinx-build
 ifeq ($(shell which $(SPHINXBUILD) >/dev/null 2>&1; echo $$?), 1)
@@ -17,7 +17,7 @@ endif
 PAPEROPT_a4     = -D latex_paper_size=a4
 PAPEROPT_letter = -D latex_paper_size=letter
 ALLSPHINXOPTS   = -d $(BUILDDIR)/doctrees $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) .
-rtd_ALLSPHINXOPTS = -d $(rtd_BUILDDIR)/doctrees $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) .
+GHPAGES_ALLSPHINXOPTS = -d $(GHPAGES_BUILDIR)/doctrees $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) .
 # the i18n builder cannot share the environment and doctrees with the others
 I18NSPHINXOPTS  = $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) .
 
@@ -54,13 +54,15 @@ clean:
 	rm -rf $(BUILDDIR)/*
 
 html:
-	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)
+	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html
 	@echo
 	@echo "Build finished. The HTML pages are in $(BUILDDIR)."
-	$ cd $(BUILDDIR) && echo "`date -u`" > .nojekyll && git add -A && git commit -q -m "Update docs" && git push -q origin gh-pages
-	$(SPHINXBUILD) -b html $(rtd_ALLSPHINXOPTS) $(rtd_BUILDDIR)/html
+	$(SPHINXBUILD) -b html $(GHPAGES_ALLSPHINXOPTS) $(GHPAGES_BUILDIR)
 	@echo
-	@echo "Build finished. The HTML pages are in $(rtd_BUILDDIR)."
+	@echo "Build finished. The HTML pages are in $(GHPAGES_BUILDIR)."
+	$ cd $(GHPAGES_BUILDIR) && echo "`date -u`" > .nojekyll && git add -A && git commit -q -m "Update docs" && git push -q origin gh-pages
+	
+
 
 dirhtml:
 	$(SPHINXBUILD) -b dirhtml $(ALLSPHINXOPTS) $(BUILDDIR)/dirhtml
