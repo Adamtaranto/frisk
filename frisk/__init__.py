@@ -827,7 +827,6 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    print('adding collections to chrm painting...')
     for collection in chromosome_collections(scaffolds, chrom_ybase, chrom_height):
         ax.add_collection(collection)
 
