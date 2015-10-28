@@ -38,7 +38,7 @@ import numpy as np
 from operator import itemgetter
 import os
 import os.path
-import pandas
+import pandas as pd
 import pickle
 import pybedtools
 from sklearn.decomposition import PCA
@@ -722,6 +722,130 @@ def makeScatter(Y,args,pca_X=None,y_pred=None):
         elif args.runProjection == 'TSNE':
             plt.title('t-SNE: kmer counts in anomalous regions')
 
+def chromosome_collections(df, y_positions, height,  **kwargs):
+    """
+    Yields BrokenBarHCollection of features that can be added to an Axes
+    object.
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Must at least have columns ['chrom', 'start', 'end', 'color']. If no
+        column 'width', it will be calculated from start/end.
+    y_positions : dict
+        Keys are chromosomes, values are y-value at which to anchor the
+        BrokenBarHCollection
+    height : float
+        Height of each BrokenBarHCollection
+    Additional kwargs are passed to BrokenBarHCollection
+    """
+    del_width = False
+    if 'width' not in df.columns:
+        del_width = True
+        df['width'] = df['end'] - df['start']
+    for chrom, group in df.groupby('chrom'):
+        yrange = (y_positions[chrom], height)
+        xranges = group[['start', 'width']].values
+        yield BrokenBarHCollection(
+            xranges, yrange, facecolors=df['colors'], **kwargs)
+    if del_width:
+        del df['width']
+
+def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
+    # Height of each ideogram
+    chrom_height = 1
+    # Spacing between consecutive ideograms
+    chrom_spacing = 1
+    # Height of the gene track. Should be smaller than `chrom_spacing` in order to
+    # fit correctly
+    gene_height = 0.4
+    # Padding between the top of a gene track and its corresponding ideogram
+    gene_padding = 0.1
+    # Width, height (in inches)
+    figsize = (6, 8)
+    # Decide which chromosomes to use
+    chromosome_list = sorted(selfGenome.keys())
+    #Get chr lengths
+    chromo_dict = dict()
+    for chr in chromosome_list:
+        chromo_dict[chr] = len(selfGenome[chr])
+
+    # Keep track of the y positions for ideograms and genes for each chromosome,
+    # and the center of each ideogram (which is where we'll put the ytick labels)
+    ybase = 0
+    chrom_ybase = {}
+    gene_ybase = {}
+    chrom_centers = {}
+
+    # Iterate in reverse so that items in the beginning of `chromosome_list` will
+    # appear at the top of the plot
+    for chrom in chromosome_list[::-1]:
+        chrom_ybase[chrom] = ybase
+        chrom_centers[chrom] = ybase + chrom_height / 2.
+        gene_ybase[chrom] = ybase - gene_height - gene_padding
+        ybase += chrom_height + chrom_spacing
+
+    #Scaffold background
+    scaffolds = pd.DataFrame(list(chromo_dict.iteritems()),columns=['chrom','end'])
+    scaffolds['start'] = 0
+    scaffolds['width'] = scaffolds.end - scaffolds.start
+    scaffolds['colors'] = '#eeeeee'
+
+    ##Read in anomalies
+    features = pd.read_table(anomBED.fn, names=['chrom', 'start', 'end'],usecols=range(3))
+    # Filter out chromosomes not in our list
+    features = features[features.chrom.apply(lambda x: x in chromosome_list)]
+    features['width'] = features.end - features.start
+    features['colors'] = '#ff6600'
+
+    if showGfffeatures:
+        if type(args.gffFeatures) is list:
+            gffType = args.gffFeatures[0]
+        else:
+            gffType = args.gffFeatures
+
+        filteredGff = list()
+
+        handle = open(args.gffIn)
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            if not line.startswith("#"):
+                rec = line.split()
+                reclist = gffFilter(rec, feature=gffType)
+                if not reclist:
+                    continue
+                recInterval = (reclist[0],int(reclist[3]),int(reclist[4]))
+                filteredGff.append(recInterval)
+
+        handle.close()
+
+
+        genes = pd.DataFrame.from_records(filteredGff, columns=['chrom', 'start', 'end'])
+        genes = genes[genes.chrom.apply(lambda x: x in chromosome_list)]
+        genes['width'] = genes.end - genes.start
+        genes['colors'] = '#2243a8'
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    for collection in chromosome_collections(scaffolds, chrom_ybase, chrom_height):
+        ax.add_collection(collection)
+
+    for collection in chromosome_collections(features, chrom_ybase, chrom_height):
+        ax.add_collection(collection)
+
+    if showGfffeatures:
+        for collection in chromosome_collections(
+            genes, gene_ybase, gene_height, alpha=0.5, linewidths=0
+        ):
+            ax.add_collection(collection)
+
+    # Axes tweaking
+    ax.set_yticks([chrom_centers[i] for i in chromosome_list])
+    ax.set_yticklabels(chromosome_list)
+    ax.axis('tight')
+
 def mainArgs():
     """Process command-line arguments"""
 
@@ -1290,12 +1414,16 @@ def main():
             pdf.savefig()
             plt.close()
 
+            # Make chromosome painting
+            makeChrPainting(selfGenome, args, anomalies, showGfffeatures=True)
+            plt.title('Chromosome painting: Anomalies on Query scaffolds')
+            pdf.savefig()
+            plt.close()
+            
             # Compose Dim reduction scatterplot
             if args.runProjection:
                 makeScatter(Y, args, pca_X=pca_X, y_pred=y_pred)
-                pdf.savefig()
-                plt.close()
-
+                
             if args.RIP:
                 plt.figure()
                 plt.title('RIP Product Index')
