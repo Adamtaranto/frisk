@@ -820,7 +820,6 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
 
         handle.close()
 
-
         genes = pd.DataFrame.from_records(filteredGff, columns=['chrom', 'start', 'end'])
         genes = genes[genes.chrom.apply(lambda x: x in chromosome_list)]
         genes['width'] = genes.end - genes.start
@@ -828,7 +827,7 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
-
+    print('adding collections to chrm painting...')
     for collection in chromosome_collections(scaffolds, chrom_ybase, chrom_height):
         ax.add_collection(collection)
 
@@ -1258,7 +1257,6 @@ def main():
         elif args.dimReduce == 'windows':
             # Anomalous windows by KLI threshold without merging
             anomWin  = thresholdList(allWindows, KLIthreshold, args, threshCol=3, merge=False)
-
         # Extract sequences
         logging.info('Recovering sequences %s for anomalous windows.' % str(len(anomWin)))
         anomSeqs = getBEDSeq(selfGenome, anomWin) #generator object that yields (name,seq) tuples.
@@ -1416,15 +1414,17 @@ def main():
             pdf.savefig()
             plt.close()
 
-            # Make chromosome painting
+            #Make chromosome painting
             makeChrPainting(selfGenome, args, anomalies, showGfffeatures=True)
             plt.title('Chromosome painting: Anomalies on Query scaffolds')
             pdf.savefig()
             plt.close()
             
-            # Compose Dim reduction scatterplot
+            #Compose Dim reduction scatterplot
             if args.runProjection:
                 makeScatter(Y, args, pca_X=pca_X, y_pred=y_pred)
+                pdf.savefig()
+                plt.close()
                 
             if args.RIP:
                 plt.figure()
@@ -1474,13 +1474,9 @@ def main():
     # Next:
     '''	1)	Include Class label in GFF output.
 
-        2)	Graphic - Chromosome map for anomalies. Scaled to the largest chromosome.
-
         3) 	Driving Kmer report. For each feature class rank kmers by mean KLI score.
 
         4)	Add Jensen-Shannon Distance as an alternative Distance measure.
-
-        5)	Add verbose / quiet option
 
         6)	Graphic - Whole genome GC content histogram. Anomaly GC. Same x/y axis scale.
 
