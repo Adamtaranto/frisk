@@ -16,6 +16,7 @@
 
 from setuptools import setup
 import versioneer
+from Cython.Build import cythonize
 
 desc = """
 frisk: Detection of sequence composition anomalies using multiple order kmers.
@@ -55,6 +56,7 @@ setup(
     version=versioneer.get_version(),
     install_requires=install_requires,
     tests_require=test_requires,
+    ext_modules=cythonize('frisk/kmerhash.pyx'),
     description=desc,
     author="Adam Taranto",
     author_email="adam.taranto@anu.edu.au",
