@@ -1,0 +1,5 @@
+# sphinx output dir
+_build
+
+# Aspell backups
+*.bak
