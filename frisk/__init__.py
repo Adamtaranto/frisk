@@ -456,7 +456,9 @@ def makePicklePath(args, **kwargs):
     pathbase = os.path.basename(args.hostSeq)
     if kwargs['space'] == 'genome':
         pickleOut = os.path.join(args.tempDir, pathbase + "_kmers_" + str(args.minWordSize) + "_" + str(args.maxWordSize) + "_" + kwargs['space'] + '.p')
-    else:
+    elif kwargs['space'] == 'window':
+        if args.querySeq:
+            pathbase = os.path.basename(args.querySeq)
         pickleOut = os.path.join(args.tempDir, pathbase + "_kmers_" + str(args.minWordSize) + "_" + str(args.maxWordSize) + "_KLI_" + kwargs['space'] + "_" + str(args.windowlen) + "_increment_" + str(args.increment) + '.p')
     return pickleOut
 
@@ -772,6 +774,7 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     figsize = (6, 8)
     # Decide which chromosomes to use
     chromosome_list = natural_sort(selfGenome.keys())
+    chromosome_list = [str(i) for i in chromosome_list]
     #Get chr lengths
     chromo_dict = dict()
     for chr in chromosome_list:
@@ -818,12 +821,14 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
             line = line.strip()
             if not line:
                 continue
+            if line.startswith(">"):
+                break
             if not line.startswith("#"):
                 rec = line.split()
                 reclist = gffFilter(rec, feature=gffType)
                 if not reclist:
                     continue
-                recInterval = (reclist[0],int(reclist[3]),int(reclist[4]))
+                recInterval = (str(reclist[0]),int(reclist[3]),int(reclist[4]))
                 filteredGff.append(recInterval)
 
         handle.close()
