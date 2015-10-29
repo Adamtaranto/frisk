@@ -34,6 +34,7 @@ import math
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.collections import BrokenBarHCollection
+from matplotlib.ticker import FuncFormatter
 import numpy as np
 from operator import itemgetter
 import os
@@ -41,6 +42,7 @@ import os.path
 import pandas as pd
 import pickle
 import pybedtools
+import re
 from sklearn.decomposition import PCA
 from sklearn.cluster import DBSCAN
 from scipy import stats
@@ -73,6 +75,12 @@ def tempPathCheck(args):
     tempFolder = os.path.abspath(args.tempDir)
     if not os.path.isdir(tempFolder):
         os.makedirs(tempFolder)
+
+def natural_sort(l): 
+    """Sorting of weird scaffold names for chromosome painting."""
+    convert = lambda text: int(text) if text.isdigit() else text.lower()
+    alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
+    return sorted(l, key = alphanum_key)
 
 def findBaseRanges(s, ch, name=None, minlen=0):
     """For string return intervals of character longer than minimum length."""
@@ -763,7 +771,7 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     # Width, height (in inches)
     figsize = (6, 8)
     # Decide which chromosomes to use
-    chromosome_list = sorted(selfGenome.keys())
+    chromosome_list = natural_sort(selfGenome.keys())
     #Get chr lengths
     chromo_dict = dict()
     for chr in chromosome_list:
@@ -842,6 +850,7 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     # Axes tweaking
     ax.set_yticks([chrom_centers[i] for i in chromosome_list])
     ax.set_yticklabels(chromosome_list)
+    ax.get_xaxis().set_major_formatter(FuncFormatter(lambda x, p: format(int(x), ',')))
     ax.axis('tight')
 
 def mainArgs():
@@ -1416,7 +1425,7 @@ def main():
             #Make chromosome painting
             makeChrPainting(selfGenome, args, anomalies, showGfffeatures=True)
             plt.title('Chromosome painting: Anomalies on Query scaffolds')
-            pdf.savefig()
+            pdf.savefig(transparent=True)
             plt.close()
             
             #Compose Dim reduction scatterplot
