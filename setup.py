@@ -29,7 +29,7 @@ install_requires = [
     "matplotlib",
     "seaborn",
     "hmmlearn",
-    "pybedtools",
+    "pybedtools==0.6.9",
     "scikit-learn",
 ]
 
