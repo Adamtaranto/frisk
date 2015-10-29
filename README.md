@@ -12,6 +12,12 @@ should work:
     pip install cython numpy scipy  # Install depenencies
     pip install frisk
 
+Documentation
+-------------
+
+Is currently being written, and will appear at
+[frisk.rtfd.org](http://frisk.readthedocs.org/) as it is completed.
+
 License
 -------
 
