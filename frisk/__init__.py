@@ -664,7 +664,7 @@ def pcaAxisLabels(pca_X, kmin=1, kmax=6):
         for y in x.keys():
             keylist.append(y)
     for x in pca_X.explained_variance_ratio_:
-        labelString = 'PC%s: %s (%s)' % (str(idx+1), str(keylist[np.argmax(pca_X.components_[idx])]), str(x*100))
+        labelString = 'PC%s: %s (%s%%)' % (str(idx+1), str(keylist[np.argmax(pca_X.components_[idx])]), str(round(x*100,2)))
         axisLabels.append(labelString)
         idx += 1
     return axisLabels
