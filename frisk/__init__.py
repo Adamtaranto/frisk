@@ -415,7 +415,7 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
     return storeMaxMerIVOM
 
 def KLI(GenomeIVOM, windowIVOM, args):
-    """	Kullback-Leiber Index: Measure of relative entropy between sets of
+    """	Kullback-Leibler Index: Measure of relative entropy between sets of
         probability distributions."""
     # IVOM structure: dict[kmer][IVOM Score]
     # Negative number indicates kmer depleted in window relative to genome
@@ -1484,15 +1484,5 @@ def main():
             d['CreationDate'] = datetime.datetime.today()
             d['ModDate'] = datetime.datetime.today()
 
-    # Next:
-    '''	1)	Include Class label in GFF output.
-
-        3) 	Driving Kmer report. For each feature class rank kmers by mean KLI score.
-
-        4)	Add Jensen-Shannon Distance as an alternative Distance measure.
-
-        6)	Graphic - Whole genome GC content histogram. Anomaly GC. Same x/y axis scale.
-
-    '''
     # Trace
     logging.info('Finished!')
