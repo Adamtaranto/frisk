@@ -147,6 +147,7 @@ def getFasta(fastaPath):
         seqDict[name] = seq
         for i in findBaseRanges(seq, 'N', name=name, minlen=10):
             nRanges.append(i)
+    nRanges = [ (x,str(y),str(z)) for x,y,z in nRanges ]
     nBlocks = pybedtools.BedTool(nRanges)
     return seqDict, nBlocks
 
@@ -545,8 +546,12 @@ def thresholdList(intervalList, threshold, args, threshCol=3, merge=True):
         tItems = [t for t in intervalList if np.log10(t[3]) <= threshold]
     else:
         tItems = [t for t in intervalList if np.log10(t[3]) >= threshold]
-    sItems = sorted(tItems, key=itemgetter(0, 1, 2))
-    anomaliesBED  = pybedtools.BedTool(sItems)
+    sortItems = sorted(tItems, key=itemgetter(0, 1, 2))
+    if args.RIP:
+        strItems = [ (w,x,y,str(z),str(c),str(p),str(s)) for w,x,y,z,c,p,s in sortItems ]
+    else:
+        strItems = [ (w,x,y,str(z)) for w,x,y,z in sortItems ]
+    anomaliesBED  = pybedtools.BedTool(strItems)
     if merge:
         anomalies = anomaliesBED.merge(d=args.mergeDist, c='4,4,4', o='max,min,mean')
     else:
@@ -561,9 +566,11 @@ def thresholdRIP(intervalList, args):
     tPImin	= [t for t in tCRImin if t[4] >= args.minPI]
     tSImax	= [t for t in tPImin if t[5] <= args.maxSI]
     sBasic = sorted(tSImax, key=itemgetter(0, 1, 2))
+    sBasic =[ (w,x,y,str(z),str(c),str(p),str(s)) for w,x,y,z,c,p,s in sBasic ]
     # Extract windows scoreing > peak CRI value
     tCRIpeak = [t for t in intervalList if t[6] >= args.peakCRI]
     sPeaks = sorted(tCRIpeak, key=itemgetter(0, 1, 2))
+    sPeaks =[ (w,x,y,str(z),str(c),str(p),str(s)) for w,x,y,z,c,p,s in sPeaks ]
     # name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
     RIPbasic	= pybedtools.BedTool(sBasic).merge(d=0, c='4,5,6,7,7', o='max,min,max,min,max') #Indexed from 1
     RIPpeaks	= pybedtools.BedTool(sPeaks)
@@ -609,7 +616,7 @@ def updateHMM(smallHMM, bigThresh): #BED interval objects. A = Fine scale guide,
     for y in bigThresh:
         newLeft  	= min(hmmBounds[y[0]], key=lambda x: abs(x-int(y[1])))
         newRight 	= min(hmmBounds[y[0]], key=lambda x: abs(x-int(y[2])))
-        updatedBoundaries.append((y[0], newLeft, newRight))
+        updatedBoundaries.append((y[0], str(newLeft), str(newRight)))
     newAnnotations 	= pybedtools.BedTool(updatedBoundaries)
     return newAnnotations
 
@@ -634,7 +641,7 @@ def	hmm2BED(allWindows, model, dataCol=3):
 
 def range2interval(rangeList, scaffoldWindows, state):
     for block in rangeList:
-        yield (scaffoldWindows[0][0], int(scaffoldWindows[block[0]][1]), int(scaffoldWindows[block[1]][2]), state)
+        yield (str(scaffoldWindows[0][0]), str(scaffoldWindows[block[0]][1]), str(scaffoldWindows[block[1]][2]), str(state))
 
 def flattenKmerMap(kMap, window=1, seqLen=1, kmin=1, kmax=5, prop=False):
     '''Takes kmer count map (nested dict), flattens dictionaries to an array
@@ -680,14 +687,14 @@ def makeScatter(Y,args,pca_X=None,y_pred=None):
             plt.title('PCA: kmer counts in anomalous regions')
             plt.xlabel(axisLabels[0])
             plt.ylabel(axisLabels[1])
-            plt.scatter(Y[:, 0], Y[:, 1], markersize=8, color='blue', alpha=0.4, label='kmer_Anomaly')
+            plt.scatter(Y[:, 0], Y[:, 1], color='blue', alpha=0.4, label='kmer_Anomaly')
 
         elif args.runProjection == 'TSNE':
             plt.figure()
             plt.title('t-SNE: kmer counts in anomalous regions')
             plt.xlabel('X')
             plt.ylabel('Y')
-            plt.scatter(Y[:, 0], Y[:, 1], markersize=8, color='blue', alpha=0.4, label='kmer_Anomaly')
+            plt.scatter(Y[:, 0], Y[:, 1], color='blue', alpha=0.4, label='kmer_Anomaly')
 
     elif args.culster:
         colors = np.array([x for x in 'bgrcmykbgrcmykbgrcmykbgrcmyk'])
@@ -808,7 +815,7 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     features['width'] = features.end - features.start
     features['colors'] = '#ff6600'
 
-    if showGfffeatures:
+    if showGfffeatures and args.gffIn and args.gffFeatures:
         if type(args.gffFeatures) is list:
             gffType = args.gffFeatures[0]
         else:
@@ -846,7 +853,7 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     for collection in chromosome_collections(features, chrom_ybase, chrom_height):
         ax.add_collection(collection)
 
-    if showGfffeatures:
+    if showGfffeatures and args.gffIn and args.gffFeatures:
         for collection in chromosome_collections(
             genes, gene_ybase, gene_height, alpha=0.5, linewidths=0
         ):
