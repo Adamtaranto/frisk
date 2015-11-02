@@ -76,10 +76,10 @@ def tempPathCheck(args):
     if not os.path.isdir(tempFolder):
         os.makedirs(tempFolder)
 
-def natural_sort(l): 
+def natural_sort(l,key=str): 
     """Sorting of weird scaffold names for chromosome painting."""
     convert = lambda text: int(text) if text.isdigit() else text.lower()
-    alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
+    alphanum_key = lambda item: [ convert(c) for c in re.split('([0-9]+)', key(item)) ] 
     return sorted(l, key = alphanum_key)
 
 def findBaseRanges(s, ch, name=None, minlen=0):
@@ -525,6 +525,7 @@ def RIP2GFF(ripBED):
     # name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
     n = 1
     annotType = 'RIP'
+    ripBED = natural_sort(ripBED, key=itemgetter(0))
     for i in ripBED:
         content = [str(i[0]), 'frisk_' + FRISK_VERSION, annotType, str(i[1]), str(i[2]), '.', '+', '.', ';'.join(['ID=Anomaly_' + str(n).zfill(len(str(len(ripBED)))), 'maxKLI=' + str(i[3]), 'minPI=' + str(i[4]), 'maxSI=' + str(i[5]), 'minCRI=' + str(i[6]), 'maxCRI=' + str(i[7])])]
         if n == 1:
