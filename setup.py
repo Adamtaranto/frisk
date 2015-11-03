@@ -26,10 +26,10 @@ install_requires = [
     "scipy>=0.16",
     "cython>=0.23",
     "pandas",
-    "matplotlib",
+    "matplotlib>=1.5.0",
     "seaborn",
-    "hmmlearn",
-    "pybedtools==0.6.9",
+    "hmmlearn>=0.1.1",
+    "pybedtools>=0.7.1",
     "scikit-learn",
 ]
 

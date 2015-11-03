@@ -573,18 +573,22 @@ def thresholdRIP(intervalList, args):
     sPeaks = sorted(tCRIpeak, key=itemgetter(0, 1, 2))
     sPeaks =[ (w,x,y,str(z),str(c),str(p),str(s)) for w,x,y,z,c,p,s in sPeaks ]
     # name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
-    RIPbasic	= pybedtools.BedTool(sBasic).merge(d=0, c='4,5,6,7,7', o='max,min,max,min,max') #Indexed from 1
-    RIPpeaks	= pybedtools.BedTool(sPeaks)
-    #	list_idx	Bed_Idx	Field_Label
-    #	0 			[1] 	name
-    #	1 			[2] 	start
-    #	2 			[3] 	stop
-    #	3 			[4] 	windowKLI
-    #	4 			[5] 	PI
-    #	5 			[6] 	SI
-    #	6 			[7] 	CRI
-    # Return merged RIP annotations containing at least one peak CRI window.
-    return RIPbasic.window(b=RIPpeaks, w=0, u=True)
+    if len(sBasic) > 0 and len(sPeaks) > 0:
+        RIPbasic	= pybedtools.BedTool(sBasic).merge(d=0, c='4,5,6,7,7', o='max,min,max,min,max') #Indexed from 1
+        RIPpeaks	= pybedtools.BedTool(sPeaks)
+        #	list_idx	Bed_Idx	Field_Label
+        #	0 			[1] 	name
+        #	1 			[2] 	start
+        #	2 			[3] 	stop
+        #	3 			[4] 	windowKLI
+        #	4 			[5] 	PI
+        #	5 			[6] 	SI
+        #	6 			[7] 	CRI
+        # Return merged RIP annotations containing at least one peak CRI window.
+        return RIPbasic.window(b=RIPpeaks, w=0, u=True)
+    else:
+        logging.info('No RIP features detected.')
+        return None
 
 def	wIndex(index, windows):
     try:
@@ -1351,10 +1355,11 @@ def main():
 
     if args.RIP:
         RIPbed	= thresholdRIP(allWindows, args) #name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
-        handle  = open(os.path.join(args.tempDir, args.RIPgff), "w")
-        for i in RIP2GFF(RIPbed):
-            handle.write(i)
-        handle.close()
+        if RIPbed:
+            handle  = open(os.path.join(args.tempDir, args.RIPgff), "w")
+            for i in RIP2GFF(RIPbed):
+                handle.write(i)
+            handle.close()
 
     # Find genes in anomalies if gff annotation file provided
     # Note: Separate output for each class, if runProjection and cluster are set
