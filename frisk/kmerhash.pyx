@@ -1,4 +1,7 @@
+# cython: profile=False
+
 import numpy as np
+cimport numpy as cnp
 
 
 def build_kmer_vec(min_k, max_k, dtype=np.uint64, alphabet="ACGT"):
@@ -34,12 +37,14 @@ def hash_seq(str seq not None,
             hash = kmerhash(kmer)
             kmer_vec[k][hash] += 1
 
+
 def kmer_freqs(dict kmer_counts not None):
     kmer_freqs = {}
     for k in kmer_counts:
         kc = kmer_counts[k].astype(np.float)
         kmer_freqs[k] = kc / kc.sum()
     return kmer_freqs
+
 
 def ivom(dict kmer_freqs not None, int alphabet_sz=4):
     cdef int min_k = min(kmer_freqs.keys())
@@ -50,21 +55,28 @@ def ivom(dict kmer_freqs not None, int alphabet_sz=4):
     maxmer_ivoms = np.zeros(kmer_freqs[max_k].shape, dtype=np.float)
     sums = {k: v.sum() for k, v in kmer_freqs.items()}
 
-    for k, freqs in kmer_freqs.items():
-        for kmer in range(len(freqs)):
-            weights = np.zeros(max_k - min_k + 1, dtype=float)
-            probs = np.zeros(max_k - min_k + 1, dtype=float)
-            for x in range(min_k, max_k + 1):
-                subkmer = kmer >> (max_k - x) * 2
-                count = kmer_freqs[x][subkmer]
-                weights[x-1] = count * alphabet_sz ** x
-                probs[x-1] = count / sums[x]
+    weights = np.zeros(max_k - min_k + 1, dtype=float)
+    probs = np.zeros(max_k - min_k + 1, dtype=float)
+    maxmer_freqs = kmer_freqs[max_k]
+    for kmer in range(len(maxmer_freqs)):
+        if maxmer_freqs[kmer] == 0:
+            continue
+        for x in range(min_k, max_k + 1):
+            subkmer = kmer >> (max_k - x) * 2
+            count = kmer_freqs[x][subkmer]
+            weights[x-1] = count * alphabet_sz ** x
+            probs[x-1] = count / (sums[x] * 2)
 
-            weights /= weights.cumsum()
+        weights /= weights.cumsum()
 
-            last_ivom = 0.0
-            for x in range(min_k - 1, max_k):
-                last_ivom = weights[x] * probs[x] + (1 - weights[x] * last_ivom)
-            maxmer_ivoms[kmer] = last_ivom
+        last_ivom = 0.0
+        for x in range(min_k - 1, max_k):
+            last_ivom = weights[x] * probs[x] + (1 - weights[x] * last_ivom)
+        maxmer_ivoms[kmer] = last_ivom
     return maxmer_ivoms / maxmer_ivoms.sum()
 
+
+def kli(cnp.ndarray gen_ivom, cnp.ndarray window_ivom):
+    w = window_ivom
+    g = gen_ivom
+    return np.nansum(w * np.log2(w/g))
