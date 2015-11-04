@@ -5,6 +5,10 @@ cimport numpy as cnp
 
 
 def build_kmer_vec(min_k, max_k, dtype=np.uint64, alphabet="ACGT"):
+    """Creates a dictionary of k-mer count vectors
+
+    The dictionary returned is of the form {1: np.ndarray(), 2: np.ndarray()}.
+    """
     kmer_vecs = {}
     for k in range(min_k, max_k + 1):
         n_kmers = len(alphabet) ** k
@@ -13,6 +17,7 @@ def build_kmer_vec(min_k, max_k, dtype=np.uint64, alphabet="ACGT"):
 
 
 def kmerhash(str kmer not None):
+    """Hash a k-mer, in 2-bit encoding."""
     cdef unsigned long long hash = 0
     cdef unsigned long long n
     if len(kmer) > 32:
