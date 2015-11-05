@@ -10,6 +10,7 @@ Frisk is a python package. On almost any modern operating system, the following
 should work:
 
     pip install cython numpy scipy  # Install depenencies
+    pip install hmmlearn
     pip install frisk
 
 Documentation
