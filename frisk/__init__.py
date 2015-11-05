@@ -1416,28 +1416,19 @@ def main():
 
         with PdfPages(os.path.join(args.tempDir, args.graphics)) as pdf:
             plt.figure()
-            plt.title('Raw KLI Distribution')
-            sns.set(color_codes=True)
-            sns.distplot(allKLI, hist=True, bins=optBins, kde=False, rug=False, color="b")
-            pdf.savefig()  # saves the current figure into a pdf page
-            plt.close()
-
-            plt.figure()
-            plt.title('log10(KLI) Distribution Optimized Bins')
-            sns.set(color_codes=True)
-            sns.distplot(logKLI, hist=True, bins=optBins, kde=False, rug=False, color="b")
-            if KLIthreshold:
-                plt.axvline(KLIthreshold, color='r', linestyle='dashed', linewidth=2)
-            pdf.savefig()
-            plt.close()
-
-            plt.figure()
-            plt.title('log10(KLI) Distribution Fine Bins')
+            plt.title('log10(KLI) Distribution')
             sns.set(color_codes=True)
             sns.distplot(logKLI, hist=True, bins=100, kde=False, rug=False, color="b")
             if KLIthreshold:
                 plt.axvline(KLIthreshold, color='r', linestyle='dashed', linewidth=2)
-            pdf.savefig()
+            pdf.savefig() # saves the current figure into a pdf page
+            plt.close()
+
+            plt.figure()
+            plt.title('Raw KLI Distribution')
+            sns.set(color_codes=True)
+            sns.distplot(allKLI, hist=True, bins=optBins, kde=False, rug=False, color="b")
+            pdf.savefig()  
             plt.close()
 
             #Make chromosome painting
@@ -1454,6 +1445,13 @@ def main():
                 
             if args.RIP:
                 plt.figure()
+                plt.title('Composite RIP Index')
+                sns.set(color_codes=True)
+                sns.distplot(CRI, hist=True, bins=100, kde=False, rug=False, color="b")
+                pdf.savefig()
+                plt.close()
+
+                plt.figure()
                 plt.title('RIP Product Index')
                 sns.set(color_codes=True)
                 sns.distplot(PI, hist=True, bins=100, kde=False, rug=False, color="b")
@@ -1468,21 +1466,14 @@ def main():
                 plt.close()
 
                 plt.figure()
-                plt.title('Composite RIP Index')
-                sns.set(color_codes=True)
-                sns.distplot(CRI, hist=True, bins=100, kde=False, rug=False, color="b")
-                pdf.savefig()
-                plt.close()
-
-                plt.figure()
-                plt.title('Square Composite RIP Index')
+                plt.title('Square Composite RIP Index - Test graphic.')
                 sns.set(color_codes=True)
                 sns.distplot(sqrCRI, hist=True, bins=100, kde=False, rug=False, color="b")
                 pdf.savefig()
                 plt.close()
 
                 plt.figure()
-                plt.title('log10 Composite RIP Index')
+                plt.title('log10 Composite RIP Index - Test graphic.')
                 sns.set(color_codes=True)
                 sns.distplot(logCRI, hist=True, bins=100, kde=False, rug=False, color="b")
                 pdf.savefig()
