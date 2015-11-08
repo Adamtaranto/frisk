@@ -60,8 +60,8 @@ def ivom(dict kmer_freqs not None, int alphabet_sz=4):
     maxmer_ivoms = np.zeros(kmer_freqs[max_k].shape, dtype=np.float)
     sums = {k: v.sum() for k, v in kmer_freqs.items()}
 
-    weights = np.zeros(max_k - min_k + 1, dtype=float)
-    probs = np.zeros(max_k - min_k + 1, dtype=float)
+    weights = np.zeros(max_k - min_k + 1, dtype=np.float)
+    probs = np.zeros(max_k - min_k + 1, dtype=np.float)
     maxmer_freqs = kmer_freqs[max_k]
     for kmer in range(len(maxmer_freqs)):
         if maxmer_freqs[kmer] == 0:
@@ -82,6 +82,6 @@ def ivom(dict kmer_freqs not None, int alphabet_sz=4):
 
 
 def kli(cnp.ndarray gen_ivom, cnp.ndarray window_ivom):
-    w = window_ivom
-    g = gen_ivom
+    w = window_ivom.astype(np.float)
+    g = gen_ivom.astype(np.float)
     return np.nansum(w * np.log2(w/g))
