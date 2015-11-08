@@ -12,8 +12,12 @@ Frisk is a python package. On almost any modern operating system, the following
 should work:
 
     pip install cython numpy scipy  # Install depenencies
-    pip install hmmlearn
     pip install frisk
+
+Please note that as our `setup.py` imports both numpy, scipy and cython, these
+packages must be installed **before** you call either `pip install frisk` or
+`python setup.py ...`.
+
 
 Documentation
 -------------
