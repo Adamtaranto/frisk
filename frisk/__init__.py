@@ -131,9 +131,8 @@ def iterFasta(path):
             name = line.strip('>').split()[0]
             seq = []
         else:
-            # Extend the current sequence with uppercase sequence
-            # Note: Could break on masked regions to exclude them from global training set.
-            seq.append(line.upper())
+            # Extend the current sequence with line
+            seq.append(line)
     if name:
         # Yield the final sequence at end of file.
         yield (name, ''.join(seq))
@@ -168,7 +167,7 @@ def getBEDSeq(fastaDict, BEDintervals):
             continue
 
 def crawlGenome(args, querySeq):
-    """Take genome fasta extract scaffolds, extract incremented windows,
+    """Take genome fasta: extract scaffolds, extract incremented windows,
         yield (seq, scaffold name, window start, window end)"""
     w 			= args.windowlen
     i 			= args.increment
@@ -296,6 +295,12 @@ def computeKmers(args, genomepickle=None, window=None, genomeMode=False, kmerMap
             for j in xrange(size - i + 1):
                 # Extract word of len i (kmer) starting at current base
                 word = seq[j:j + i]
+                #Do not mask query windows
+                #Optionally include lowercase masking from host genome so that kmer returns idx = None.
+                if not genomeMode:
+                    word = word.upper()
+                elif not args.maskHost:
+                    word = word.upper()
                 # This checks that the string is a legit kmer in the map i.e. does not contain Ns
                 # .get will return 'None' if kmer key does not exist, or value if it does.
                 # Updates idx original 0 count of word
@@ -959,6 +964,11 @@ def mainArgs():
                         help='Slide survey window by this increment')
 
     # Optional run settings
+    parser.add_argument('--maskHost',
+                        action='store_true',
+                        default=False,
+                        help='Do not count kmers containing lowercase masked characters in \
+                        host genome towards genome totals. Does not affect kmer counting in query genome windows.')
     parser.add_argument('--exitAfter',
                         default=None,
                         choices=[None, 'GenomeKmers', 'WindowKLI'],
