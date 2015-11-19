@@ -29,6 +29,7 @@ install_requires = [
     "matplotlib>=1.5.0",
     "seaborn",
     "hmmlearn>=0.1.1",
+    "pysam>=0.8.1",
     "pybedtools>=0.7.1",
     "scikit-learn",
 ]
