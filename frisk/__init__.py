@@ -1212,14 +1212,11 @@ def main():
         PI		=	wIndex(4, allWindows)
         SI		=	wIndex(5, allWindows)
         CRI		=	wIndex(6, allWindows)
-        sqrCRI 	= 	CRI**2
-        logCRI 	= 	np.log10(CRI)
         # Scrub NANs
         PI		=	PI[~np.isnan(PI)]
         SI		=	SI[~np.isnan(SI)]
         CRI		=	CRI[~np.isnan(CRI)]
-        sqrCRI	=	sqrCRI[~np.isnan(sqrCRI)]
-        logCRI 	= 	logCRI[np.logical_not(np.isnan(logCRI))]
+
 
     ##########################################
     ###########  Calculate and Set  ##########
@@ -1472,20 +1469,6 @@ def main():
                 plt.title('RIP Substrate Index')
                 sns.set(color_codes=True)
                 sns.distplot(SI, hist=True, bins=100, kde=False, rug=False, color="b")
-                pdf.savefig()
-                plt.close()
-
-                plt.figure()
-                plt.title('Square Composite RIP Index - Test graphic.')
-                sns.set(color_codes=True)
-                sns.distplot(sqrCRI, hist=True, bins=100, kde=False, rug=False, color="b")
-                pdf.savefig()
-                plt.close()
-
-                plt.figure()
-                plt.title('log10 Composite RIP Index - Test graphic.')
-                sns.set(color_codes=True)
-                sns.distplot(logCRI, hist=True, bins=100, kde=False, rug=False, color="b")
                 pdf.savefig()
                 plt.close()
 
