@@ -547,17 +547,16 @@ def hmmBED2GFF(hmmBED):
         yield outstring
         n += 1
 
-def thresholdList(intervalList, threshold, args, threshCol=3, merge=True):
+def thresholdKLI(intervalList, threshold, args, threshCol='windowKLI', merge=True):
+    intervalList = intervalList.loc[~(np.isnan(intervalList['windowKLI']))].sort_values(
+        ['name','start','stop'],ascending=[1,1,1],na_position='last')
     if args.findSelf:
-        tItems = [t for t in intervalList if np.log10(t[3]) <= threshold]
+        tItems = intervalList.loc[(np.log10(intervalList[threshCol]) <= threshold)]
     else:
-        tItems = [t for t in intervalList if np.log10(t[3]) >= threshold]
-    sortItems = sorted(tItems, key=itemgetter(0, 1, 2))
-    if args.RIP:
-        strItems = [ (w,x,y,str(z),str(c),str(p),str(s)) for w,x,y,z,c,p,s in sortItems ]
-    else:
-        strItems = [ (w,x,y,str(z)) for w,x,y,z in sortItems ]
-    anomaliesBED  = pybedtools.BedTool(strItems)
+        tItems = intervalList.loc[(np.log10(intervalList[threshCol]) >= threshold)]
+    tItems[['start','stop']] = tItems[['start','stop']].astype(int)
+    tItems[['name','windowKLI']] = tItems[['name','windowKLI']].astype(str)
+    anomaliesBED  = pybedtools.BedTool([i for i in tItems.as_matrix(columns=['name','start','stop','windowKLI']).tolist()])
     if merge:
         anomalies = anomaliesBED.merge(d=args.mergeDist, c='4,4,4', o='max,min,mean')
     else:
@@ -567,28 +566,27 @@ def thresholdList(intervalList, threshold, args, threshCol=3, merge=True):
 def thresholdRIP(intervalList, args):
     logging.info('Extracting RIP features: CRImin = %s, PImin = %s, SImax = %s, CRIpeak = %s \
     ' % (str(args.minCRI), str(args.minPI), str(args.maxSI), str(args.peakCRI)))
-    # Threshold windows on CRI, PI, and SI
-    tCRImin	= [t for t in intervalList if t[6] >= args.minCRI] #Indexed from 0
-    tPImin	= [t for t in tCRImin if t[4] >= args.minPI]
-    tSImax	= [t for t in tPImin if t[5] <= args.maxSI]
-    sBasic = sorted(tSImax, key=itemgetter(0, 1, 2))
-    sBasic =[ (w,x,y,str(z),str(c),str(p),str(s)) for w,x,y,z,c,p,s in sBasic ]
-    # Extract windows scoreing > peak CRI value
-    tCRIpeak = [t for t in intervalList if t[6] >= args.peakCRI]
-    sPeaks = sorted(tCRIpeak, key=itemgetter(0, 1, 2))
-    sPeaks =[ (w,x,y,str(z),str(c),str(p),str(s)) for w,x,y,z,c,p,s in sPeaks ]
-    # name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
-    if len(sBasic) > 0 and len(sPeaks) > 0:
-        RIPbasic	= pybedtools.BedTool(sBasic).merge(d=0, c='4,5,6,7,7', o='max,min,max,min,max') #Indexed from 1
-        RIPpeaks	= pybedtools.BedTool(sPeaks)
-        #	list_idx	Bed_Idx	Field_Label
-        #	0 			[1] 	name
-        #	1 			[2] 	start
-        #	2 			[3] 	stop
-        #	3 			[4] 	windowKLI
-        #	4 			[5] 	PI
-        #	5 			[6] 	SI
-        #	6 			[7] 	CRI
+    intervalList = intervalList[['name', 'start', 'stop', 'windowKLI', 'PI', 'SI', 'CRI']]
+    intervalList = intervalList.loc[~(np.isnan(intervalList['PI'])) 
+        & ~(np.isnan(intervalList['SI']))
+        & ~(np.isnan(intervalList['CRI']))
+        & ~(np.isnan(intervalList['windowKLI']))
+        ].sort_values(['name','start','stop'], ascending=[1,1,1], na_position='last')
+    basicTresh = intervalList.loc[(intervalList['PI'] >= args.minPI)
+        & (intervalList['SI'] <= args.maxSI )
+        & (intervalList['CRI'] >= args.minCRI)]
+    peakThresh = intervalList.loc[(intervalList['CRI'] >= args.peakCRI)]
+    basicTresh[['start','stop']] = basicTresh[['start','stop']].astype(int)
+    basicTresh[['name','windowKLI','PI', 'SI', 'CRI']] = basicTresh[['name','windowKLI','PI', 'SI', 'CRI']].astype(str)
+    peakThresh[['start','stop']] = peakThresh[['start','stop']].astype(int)
+    peakThresh[['name','windowKLI','PI', 'SI', 'CRI']] = peakThresh[['name','windowKLI','PI', 'SI', 'CRI']].astype(str)
+    if len(basicTresh) > 0 and len(peakThresh) > 0:
+        # name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
+        RIPbasic  = pybedtools.BedTool([i for i in basicTresh.as_matrix(
+            columns=['name','start','stop','windowKLI','PI', 'SI', 'CRI']).tolist()]
+            ).merge(d=0, c='4,5,6,7,7', o='max,min,max,min,max')
+        RIPpeaks  = pybedtools.BedTool([i for i in peakThresh.as_matrix(
+            columns=['name','start','stop']).tolist()])
         # Return merged RIP annotations containing at least one peak CRI window.
         return RIPbasic.window(b=RIPpeaks, w=0, u=True)
     else:
@@ -630,15 +628,24 @@ def updateHMM(smallHMM, bigThresh): #BED interval objects. A = Fine scale guide,
     newAnnotations 	= pybedtools.BedTool(updatedBoundaries)
     return newAnnotations
 
-def	hmm2BED(allWindows, model, dataCol=3):
+def	hmm2BED(allWindows, model, dataCol='windowKLI'):
     allIntervals	=	list()
+    # Add empty column to store hmm state data
+    allWindows['hmmState'] = np.nan
     # Get unique scaffold names from tuples in allWindows
-    scaffoldList	= 	[i for i in Counter(elem[0] for elem in allWindows)]
+    scaffoldList	= 	[i for i in Counter(elem for elem in allWindows['name'])]
     for name in scaffoldList:
-        scaffoldWin = 	sorted([rec for rec in allWindows if rec[0] == name], key=itemgetter(0, 1, 2))
-        dataSeq		= 	wIndex(dataCol, scaffoldWin)
-        dataSeq		=	dataSeq[:, np.newaxis]
+        # Slice out scaffold data where KLI data not NaN
+        scaffoldWin = 	allWindows.loc[(allWindows['name'] == name) & ~(np.isnan(allWindows['windowKLI']))]
+        dataSeq		= 	scaffoldWin.as_matrix(columns=[dataCol])
+        #dataSeq		=	dataSeq[:, np.newaxis]
+        # State prediction returned as 1D array
         stateSeq	= 	model.predict(dataSeq)
+        # Append hmm state to slice
+        scaffoldWin['hmmState'] = stateSeq.tolist()
+        # Migrate updated splice back to master dataframe
+        allWindows.loc[scaffoldWin.index.values] = scaffoldWin
+        # Merge stretches of continuous state as interval annotation
         stateRange1 = 	findBaseRanges(stateSeq, 0)
         stateRange2 = 	findBaseRanges(stateSeq, 1)
         for i in range2interval(stateRange1, scaffoldWin, 'State1'):
@@ -647,11 +654,17 @@ def	hmm2BED(allWindows, model, dataCol=3):
             allIntervals.append(i)
     allIntervals 	= 	sorted(allIntervals, key=itemgetter(0, 1, 2))
     allBED 			= 	pybedtools.BedTool(allIntervals)
-    return allBED
+    return allBED,allWindows
 
 def range2interval(rangeList, scaffoldWindows, state):
+    scaffoldWindows.reset_index(drop=True)
     for block in rangeList:
-        yield (str(scaffoldWindows[0][0]), str(scaffoldWindows[block[0]][1]), str(scaffoldWindows[block[1]][2]), str(state))
+        yield (
+        str(scaffoldWindows['name'][0]),
+        str(int(scaffoldWindows['start'][block[0]])), 
+        str(int(scaffoldWindows['stop'][block[1]])), 
+        str(state)
+        )
 
 def flattenKmerMap(kMap, window=1, seqLen=1, kmin=1, kmax=5, prop=False):
     '''Takes kmer count map (nested dict), flattens dictionaries to an array
@@ -1162,15 +1175,24 @@ def main():
     if os.path.isfile(windowsPickle) and args.recalcWin:
         logging.info('Importing previously calculated window KLI scores from: %s' % windowsPickle)
         allWindows = pickle.load(open(windowsPickle, "rb"))
-
+        #Note: Need check here to make sure that imported dataframe has RIP data if going to be used later
+        #Alt: put RIP status in the pickle name?
     else:
         # Initialise textfile output
         out     = args.outfile
         outPath = os.path.join(args.tempDir, out)
         handle  = open(outPath, "w")
 
-        # List to store KLI-by-window
-        allWindows = list()
+        # Pandas dataframe to store KLI and RIP stats by window
+        if args.RIP:
+            columns = ['name', 'start', 'stop', 'windowKLI', 'PI', 'SI', 'CRI']
+        else:
+            columns = ['name', 'start', 'stop', 'windowKLI']
+
+        allWindows = pd.DataFrame(columns=columns)
+
+        #Add header row to raw output
+        handle.write('\t'.join(list(allWindows.columns.values)) + '\n')
 
         # Loop over genome to get all window KLI scores
         for seq, name, start, stop in crawlGenome(args, querySeq): #Note: coords are inclusive i.e. 1:10 = 0:9 in string
@@ -1182,10 +1204,10 @@ def main():
             if args.RIP:
                 PI, SI, CRI 	= calcRIP(windowKmers)
                 outString	= [name, str(start), str(stop), str(windowKLI), str(PI), str(SI), str(CRI)]
-                allWindows.append((name, start, stop, windowKLI, PI, SI, CRI))
+                allWindows.loc[len(allWindows)]=[name, start, stop, windowKLI, PI, SI, CRI]
             else:
                 outString	= [name, str(start), str(stop), str(windowKLI)]
-                allWindows.append((name, start, stop, windowKLI)) #Mind that KLI does not get stored as scientific notation
+                allWindows.loc[len(allWindows)]=[name, start, stop, windowKLI] #Mind that KLI does not get stored as scientific notation
 
             handle.write('\t'.join(outString) + '\n')
             print('\t'.join(outString))
@@ -1207,11 +1229,10 @@ def main():
     ###########  Calculate and Set  ##########
     #############  RIP threshold  ############
     ##########################################
-    #Note: Index error if importing windows that do not include RIP data, add index check + sysExit to wIndex
     if args.RIP:
-        PI		=	wIndex(4, allWindows)
-        SI		=	wIndex(5, allWindows)
-        CRI		=	wIndex(6, allWindows)
+        PI		=	allWindows.as_matrix(columns=['PI'])
+        SI		=	allWindows.as_matrix(columns=['SI'])
+        CRI		=	allWindows.as_matrix(columns=['CRI'])
         # Scrub NANs
         PI		=	PI[~np.isnan(PI)]
         SI		=	SI[~np.isnan(SI)]
@@ -1224,7 +1245,7 @@ def main():
     ##########################################
 
     # Get KLI data for all surveyed windows
-    allKLI 			=	wIndex(3, allWindows)
+    allKLI 			=	allWindows.as_matrix(columns=['windowKLI'])
     logKLI 			=	np.log10(allKLI)
     KLIthreshold	=	None
 
@@ -1266,29 +1287,28 @@ def main():
         # Create 2-state HMM model
         model	=	hmm.GaussianHMM(n_components=2, covariance_type="full")
         # Train on KLI strings from all scaffolds
-        dataKLI	=	np.asarray(allKLI)
-        dataKLI	=	dataKLI[:, np.newaxis]
-        model.fit(dataKLI) #Note: Ideally pass all scaffold data sequences in separately
+        model.fit(allKLI[~np.isnan(allKLI)][:, np.newaxis]) #Note: Ideally pass all scaffold data sequences in separately
         # Use model to prdict HMM state for all scaffolds
-        hmmBED	= hmm2BED(allWindows, model, dataCol=3)
+        # Return hmmBED object and updates allWindow object which now includes 'hmmState' column
+        hmmBED,allWindows	= hmm2BED(allWindows, model, dataCol='windowKLI')
         # Write hmm states as GFF3 outfile
         handle = open(os.path.join(args.tempDir, args.hmmOutfile), "w")
         for i in hmmBED2GFF(hmmBED):
             handle.write(i)
         handle.close()
 
-    #
-    # Dimensionality reduction ############
-    # on Anomaly kmer counts #############
-    #
+    #################################
+    #### Dimensionality reduction ###
+    ##### on Anomaly kmer counts ####
+    #################################
 
     # Generate cordinate list for anomalous regions
     if args.runProjection:
         if args.dimReduce == 'features':
-            anomWin  = thresholdList(allWindows, KLIthreshold, args, threshCol=3, merge=True)
+            anomWin  = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=True)
         elif args.dimReduce == 'windows':
             # Anomalous windows by KLI threshold without merging
-            anomWin  = thresholdList(allWindows, KLIthreshold, args, threshCol=3, merge=False)
+            anomWin  = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=False)
         # Extract sequences
         logging.info('Recovering sequences %s for anomalous windows.' % str(len(anomWin)))
         anomSeqs = getBEDSeq(selfGenome, anomWin) #generator object that yields (name,seq) tuples.
@@ -1320,7 +1340,7 @@ def main():
         if args.runProjection == 'PCA':
             pca_X = PCA(n_components=3)
             Y = pca_X.fit(anomCounts).transform(anomCounts)
-        elif args.runProjection == 'TSNE':
+        elif args.runProjection == 'TSNE': #Note add SKL-TSNE support
             Y = tsne.tsne(X=anomCounts, no_dims=3, initial_dims=50, perplexity=args.perplexity)
             pca_X = None
 
@@ -1332,6 +1352,8 @@ def main():
                 y_pred = dbscan.labels_.astype(np.int)
             else:
                 y_pred = dbscan.predict(Y)
+            # Note: Add Cluster column
+            # Append cluster label to anomWin dataframe
         else:
             y_pred = None
 
@@ -1341,16 +1363,28 @@ def main():
     ##########################################
 
     # Threshold and merge anomalous features.
-    if args.runProjection:
+    if args.runProjection: # Recycle if already calculated for projection
+        #Note: This can result in individual windows being reported if args.dimReduce == 'windows'
         anomalies = anomWin
         logging.info('Detected %s features above KLI threshold.' % str(len(anomalies)))
     elif KLIthreshold:
-        anomalies = thresholdList(allWindows,KLIthreshold,args,threshCol=3,merge=True)
+        anomalies = thresholdKLI(allWindows,KLIthreshold,args,threshCol='windowKLI',merge=True)
         logging.info('Detected %s features above KLI threshold.' % str(len(anomalies)))
 
+    print(allWindows)
+    print('anomalies:',anomalies)
     ##########################################
-    ######## Write windows to GFF3 out #######
+    ######## Write features to GFF3 out ######
     ##########################################
+
+    ''' Note: If clustering was run then we can print anomalies 
+        and their component genes by classification group. 
+        1) def function to parse allWindows dataframe to gff
+        2) Slice dataframe by classification (exclude KLI NaNs)
+        3) Sort and merge within classes
+        4) Print anomalies to file
+        5) Print genes withing anomalies '''
+
 
     # Write anomalies as GFF3 outfile
     # Note: Need to incorporate cluster identity if calculated.
@@ -1475,7 +1509,7 @@ def main():
             # Set the file's metadata via the PdfPages object:
             d = pdf.infodict()
             d['Title'] = 'Frisk: KLI Distribution Summary'
-            d['Author'] = u'Frisk v0.0.1'
+            d['Author'] = 'frisk --' + FRISK_VERSION
             d['Subject'] = 'Summary graphics'
             d['Keywords'] = 'histogram'
             d['CreationDate'] = datetime.datetime.today()
