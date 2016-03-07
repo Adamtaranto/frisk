@@ -554,8 +554,8 @@ def thresholdKLI(intervalList, threshold, args, threshCol='windowKLI', merge=Tru
         tItems = intervalList.loc[(np.log10(intervalList[threshCol]) <= threshold)]
     else:
         tItems = intervalList.loc[(np.log10(intervalList[threshCol]) >= threshold)]
-    tItems[['start','stop']] = tItems[['start','stop']].astype(int)
-    tItems[['name','windowKLI']] = tItems[['name','windowKLI']].astype(str)
+    tItems[['start','stop']] = tItems.loc[:,('start','stop')].astype(int) #Note: Pandas wants to complain about chained assignments here. Ignore.
+    tItems[['name','windowKLI']] = tItems.loc[:,('name','windowKLI')].astype(str)
     anomaliesBED  = pybedtools.BedTool([i for i in tItems.as_matrix(columns=['name','start','stop','windowKLI']).tolist()])
     if merge:
         anomalies = anomaliesBED.merge(d=args.mergeDist, c='4,4,4', o='max,min,mean')
@@ -1125,6 +1125,7 @@ def main():
     ##########################################
     
     #Note: Move a lot of this off to class object
+    pd.set_option('chained_assignment',None) #Suppress spurious pandas warning
     logging.basicConfig(level=logging.INFO, format=("%(asctime)s - %(funcName)s - %(message)s"))
     args = mainArgs()
     print('frisk --', FRISK_VERSION)
@@ -1371,8 +1372,6 @@ def main():
         anomalies = thresholdKLI(allWindows,KLIthreshold,args,threshCol='windowKLI',merge=True)
         logging.info('Detected %s features above KLI threshold.' % str(len(anomalies)))
 
-    print(allWindows)
-    print('anomalies:',anomalies)
     ##########################################
     ######## Write features to GFF3 out ######
     ##########################################
