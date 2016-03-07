@@ -23,15 +23,15 @@ frisk: Detection of sequence composition anomalies using multiple order kmers.
 
 install_requires = [
     "numpy>=1.10",
-    "scipy>=0.16",
+    "scipy>=0.17",
     "cython>=0.23",
-    "pandas",
+    "pandas>=0.17",
     "matplotlib>=1.5.0",
-    "seaborn",
-    "hmmlearn>=0.1.1",
-    "pysam>=0.8.1",
-    "pybedtools>=0.7.1",
-    "scikit-learn",
+    "seaborn>=0.8",
+    "hmmlearn>=0.2.0",
+    "pysam>=0.9.0",
+    "pybedtools>=0.7.6",
+    "scikit-learn>=0.17.1",
 ]
 
 test_requires = [
