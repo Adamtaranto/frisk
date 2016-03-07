@@ -513,14 +513,17 @@ def gffFilter(rec, **kwargs):
     else:
         return rec
 
-def anomaly2GFF(anomBED, **kwargs):
+def anomaly2GFF(anomBED, args, **kwargs):
     n = 1
     if 'category' in kwargs.keys():
         annotType = kwargs['category']
     else:
         annotType = 'Kmer-anomaly'
     for i in anomBED:
-        content = [str(i[0]), 'frisk_' + FRISK_VERSION, annotType, str(i[1]), str(i[2]), '.', '+', '.', ';'.join(['ID=Anomaly_' + str(n).zfill(len(str(len(anomBED)))), 'maxKLI=' + str(i[3]), 'minKLI=' + str(i[4]), 'meanKLI=' + str(i[5])])]
+        if args.dimReduce == 'windows':
+            content = [str(i[0]), 'frisk_' + FRISK_VERSION, annotType, str(i[1]), str(i[2]), '.', '+', '.', ';'.join(['ID=Anomaly_' + str(n).zfill(len(str(len(anomBED)))), 'KLI=' + str(i[3])])]           
+        else:
+            content = [str(i[0]), 'frisk_' + FRISK_VERSION, annotType, str(i[1]), str(i[2]), '.', '+', '.', ';'.join(['ID=Anomaly_' + str(n).zfill(len(str(len(anomBED)))), 'maxKLI=' + str(i[3]), 'minKLI=' + str(i[4]), 'meanKLI=' + str(i[5])])]
         if n == 1:
             yield '##gff-version 3' + '\n'
         yield '\t'.join(content) + '\n'
@@ -1311,7 +1314,7 @@ def main():
             # Anomalous windows by KLI threshold without merging
             anomWin  = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=False)
         # Extract sequences
-        logging.info('Recovering sequences %s for anomalous windows.' % str(len(anomWin)))
+        logging.info('Recovering %s sequences from anomalous windows.' % str(len(anomWin)))
         anomSeqs = getBEDSeq(selfGenome, anomWin) #generator object that yields (name,seq) tuples.
 
         # Counter to manage empty array on first pass
@@ -1376,20 +1379,22 @@ def main():
     ######## Write features to GFF3 out ######
     ##########################################
 
-    ''' Note: If clustering was run then we can print anomalies 
-        and their component genes by classification group. 
-        1) def function to parse allWindows dataframe to gff
-        2) Slice dataframe by classification (exclude KLI NaNs)
-        3) Sort and merge within classes
-        4) Print anomalies to file
-        5) Print genes withing anomalies '''
+    ''' Note: Add option: 
+        if args.runProjection and args.gffOutfile:
+            # Assign classification group to anomWin df
+            # export anom-genes by classification group. 
+            1) def function to parse allWindows dataframe to gff
+            2) Slice dataframe by classification (exclude KLI NaNs)
+            3) Sort and merge within classes
+            4) Print anomalies to file
+            5) Print genes withing anomalies '''
 
 
     # Write anomalies as GFF3 outfile
     # Note: Need to incorporate cluster identity if calculated.
     if args.gffOutfile:
         handle  = open(os.path.join(args.tempDir, args.gffOutfile), "w")
-        for i in anomaly2GFF(anomalies): #Use category='Class_Label' to pass class
+        for i in anomaly2GFF(anomalies,args): #Use category='Class_Label' to pass class
             handle.write(i)
         handle.close()
 
