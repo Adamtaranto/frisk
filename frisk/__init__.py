@@ -1376,10 +1376,10 @@ def main():
 
         # Run dimension reduction method of choice on anomaly kmer counts
         if args.runProjection == 'PCA':
-            pca_X = PCA(n_components=3)
+            pca_X = PCA(n_components=args.projectionDims)
             Y = pca_X.fit(anomCounts).transform(anomCounts)
         elif args.runProjection == 'SKL-TSNE':
-            tsne_model = TSNE(  n_components=2, 
+            tsne_model = TSNE(  n_components=args.projectionDims, 
                                 perplexity=args.perplexity, 
                                 early_exaggeration=4.0, 
                                 learning_rate=1000.0, 
@@ -1396,19 +1396,19 @@ def main():
             Y = tsne_model.fit_transform(anomCounts)
             pca_X = None
         elif args.runProjection == 'PY-TSNE':
-            Y = tsne.tsne(X=anomCounts, no_dims=3, initial_dims=50, perplexity=args.perplexity)
+            Y = tsne.tsne(X=anomCounts, no_dims=args.projectionDims, initial_dims=50, perplexity=args.perplexity)
             pca_X = None
         elif args.runProjection == 'MDS':
-            MDS_model = MDS(    n_components=3, metric=True, n_init=5, max_iter=500, verbose=0, \
+            MDS_model = MDS(    n_components=args.projectionDims, metric=True, n_init=5, max_iter=500, verbose=0, \
                                 eps=0.001, n_jobs=1, random_state=None, dissimilarity='euclidean')
             pca_X = None
             Y = MDS_model.fit_transform(anomCounts)
         elif args.runProjection == 'IncrementalPCA':
-            IncrementalPCA_model = IncrementalPCA(n_components=2, whiten=False, copy=True, batch_size=None)
+            IncrementalPCA_model = IncrementalPCA(n_components=args.projectionDims, whiten=False, copy=True, batch_size=None)
             pca_X = IncrementalPCA_model
             Y = IncrementalPCA_model.fit(anomCounts).transform(anomCounts)
         elif args.runProjection == 'NMF':
-            NMF_model = NMF(    n_components=2, init=None, solver='cd', tol=0.0001, max_iter=200, \
+            NMF_model = NMF(    n_components=args.projectionDims, init=None, solver='cd', tol=0.0001, max_iter=200, \
                                 random_state=None, alpha=0.0, l1_ratio=0.0, verbose=0, shuffle=False, \
                                 nls_max_iter=2000, sparseness=None, beta=1, eta=0.1)
             pca_X = None
