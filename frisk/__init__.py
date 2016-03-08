@@ -1086,8 +1086,8 @@ def mainArgs():
     parser.add_argument('--dumpPCAdata',
                         action='store_true',
                         default=False,
-                        help='If set export array of kmer proportional counts, and array of labels to \
-                        temp directory.') #Note: Add option to dump chr_start_stop labels for anomaly rows.
+                        help='If set export array of kmer proportional counts "anomCounts", \
+                        and array of labels "anomLabels" to temp directory.')
     parser.add_argument('--spikeNormal',
                         action='store_true',
                         default=False,
