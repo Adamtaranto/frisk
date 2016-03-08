@@ -43,8 +43,12 @@ import pandas as pd
 import pickle
 import pybedtools
 import re
-from sklearn.decomposition import PCA
 from sklearn.cluster import DBSCAN
+from sklearn.decomposition import IncrementalPCA
+from sklearn.decomposition import NMF
+from sklearn.decomposition import PCA
+from sklearn.manifold import MDS
+from sklearn.manifold import TSNE
 from scipy import stats
 import seaborn as sns
 import sys
@@ -706,18 +710,18 @@ def pcaAxisLabels(pca_X, kmin=1, kmax=6):
 
 def makeScatter(Y,args,pca_X=None,y_pred=None):
     if not args.culster:
-        if args.runProjection == 'PCA':
+        if pca_X:
             axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
             # Generate graphic
             plt.figure()
-            plt.title('PCA: kmer counts in anomalous regions')
+            plt.title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
             plt.xlabel(axisLabels[0])
             plt.ylabel(axisLabels[1])
             plt.scatter(Y[:, 0], Y[:, 1], color='blue', alpha=0.4, label='kmer_Anomaly')
 
-        elif args.runProjection == 'TSNE':
+        elif args.runProjection in ('PY-TSNE','SKL-TSNE','IncrementalPCA', 'NMF', 'MDS'):
             plt.figure()
-            plt.title('t-SNE: kmer counts in anomalous regions')
+            plt.title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
             plt.xlabel('X')
             plt.ylabel('Y')
             plt.scatter(Y[:, 0], Y[:, 1], color='blue', alpha=0.4, label='kmer_Anomaly')
@@ -756,14 +760,14 @@ def makeScatter(Y,args,pca_X=None,y_pred=None):
 
         ax.legend(scatter_class, names_class, loc='center left', bbox_to_anchor=(1, 0.5))
 
-        if args.runProjection == 'PCA':
+        if pca_X:
             axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
-            plt.title('PCA: kmer counts in anomalous regions')
+            plt.title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
             plt.xlabel(axisLabels[0])
             plt.ylabel(axisLabels[1])
 
-        elif args.runProjection == 'TSNE':
-            plt.title('t-SNE: kmer counts in anomalous regions')
+        elif args.runProjection in ('PY-TSNE','SKL-TSNE', 'IncrementalPCA', 'NMF', 'MDS'):
+            plt.title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
 
 def chromosome_collections(df, y_positions, height,  **kwargs):
     """
@@ -1009,7 +1013,8 @@ def mainArgs():
     parser.add_argument('--threshTypeKLI',
                         default= None,
                         choices=[None, 'percentile', 'otsu'],
-                        help='Options for defining non-self threshold on window KLI scores: Otsu binarisation, 2-state HMM, percentile.')
+                        help='Options for defining non-self threshold on window KLI scores: \
+                        Otsu binarisation, 2-state HMM, percentile.')
     parser.add_argument('--percentileKLI',
                         type=float,
                         default=99.0,
@@ -1044,7 +1049,8 @@ def mainArgs():
     parser.add_argument('--peakCRI',
                         type=float,
                         default=1.0,
-                        help='Require that merged annotations contain at least one window with a CRI score above this score.'
+                        help='Require that merged annotations contain at least one window with a CRI \
+                        score above this score.'
                         )
     parser.add_argument('--minPI',
                         type=float,
@@ -1060,61 +1066,85 @@ def mainArgs():
     # Dimentionality Reduction Stuff
     parser.add_argument('--runProjection',
                         default=None,
-                        choices=[None, 'PCA', 'TSNE' ],
-                        help='Project anomalous windows into multidimensional space.')
+                        choices=[None, 'PCA', 'PY-TSNE', 'SKL-TSNE', 'IncrementalPCA', 'NMF', 'MDS'],
+                        help='Data decomposition methods for projecting anomaly kmer counts into lower \
+                        dimensional space. Recommended: PCA or PY-TSNE')
+    parser.add_argument('--projectionDims',
+                        type=int,
+                        default=2,
+                        help='Number of dimensions to project anomaly kmer counts into. Note: \
+                        frisk report prints only first two dimensions of projection. Set to three \
+                        dimensions if using --dumpPCAdata to create 3D plots in other software.')
     parser.add_argument('--dimReduce',
                         default='windows',
                         choices=['features', 'windows'],
                         help='Run dimensionality reduction on all anomalous features, or on merged features.')
     parser.add_argument('--culster',
                         default=None,
-                        choices=[None, 'DBSCAN'], #add support for kmeans later
+                        choices=[None, 'DBSCAN'], #Note: Add support for kmeans later
                         help='Attempt clustering on projection.')
     parser.add_argument('--dumpPCAdata',
                         action='store_true',
                         default=False,
-                        help='If set export array of kmer proportional counts, and array of labels to temp directory.')
+                        help='If set export array of kmer proportional counts "anomCounts", \
+                        and array of labels "anomLabels" to temp directory.')
     parser.add_argument('--spikeNormal',
                         action='store_true',
                         default=False,
-                        help='Include a sampling of windows from the centre of the self population.')
+                        help='#FutureFunction: Include a sampling of windows from the centre of the \
+                        self population.')
     parser.add_argument('--pcaMin',
                         type=int,
                         default='1',
-                        help='Minimum order kmer set to include in dimensionality reduction data.')
+                        help='Minimum order kmer set to include in dimensionality reduction data. \
+                        Used for all dimensionality reduction methods.')
     parser.add_argument('--pcaMax',
                         type=int,
                         default='6',
-                        help='Maxmimum order kmer set to include in dimensionality reduction data.')
+                        help='Maxmimum order kmer set to include in dimensionality reduction data. \
+                        Used for all dimensionality reduction methods.')
     parser.add_argument('--perplexity',
                         type=float,
                         default=20.0,
-                        help='Used for TSNE. Typical values for the perplexity range between 5 and 50. Test larger values for larger/denser datasets.')
+                        help='Used for TSNE. Typical values for the perplexity range between 5 and 50. \
+                        Test larger values for larger/denser datasets.')
+    parser.add_argument('--tsneGradient',
+                        default='barnes_hut',
+                        choices=['barnes_hut', 'exact'],
+                        help='Optionally use Barnes-Hut approximation to calculate gradient \
+                        when using SKL-TSNE dimensionality reduction. Faster than "exact" method.')
+    parser.add_argument('--tsneInitPCA',
+                        default='random',
+                        choices=['random', 'pca'],
+                        help='Optionally initialise SKL-TSNE with a SKL-PCA. Default: Random \
+                        start state. Final clusters may fluctuate.')
     parser.add_argument('--epsDBSCAN',
                         type=float,
                         default=10,
-                        help='Set eps value for DBSCAN, will attempt to cluster points < eps apart. Note: Typically smaller for PCA (0.01 - 3.0), than for t-SNE (5-20).')
+                        help='Set eps value for DBSCAN, will attempt to cluster points < "eps" distance apart. \
+                        Note: Typically smaller for PCA (0.01 - 3.0), than for t-SNE (5-20).')
 
     # Revise feature boundaries using HMM split track with reduced window and increment size
     # Note: Not yet implemented
     parser.add_argument('--updateHMM',
                         action='store_true',
                         default=False,
-                        help='Revise ')
+                        help='#FutureFunction: Revise KLI anomaly boundaries using HMM anomaly track')
     parser.add_argument('--updateWin',
                         type=int,
                         default=1000,
-                        help='')
+                        help='#FutureFunction: Re-run window scan using modified window parameters \
+                        for HMM revision track.')
     parser.add_argument('--updateInc',
                         type=int,
                         default=500,
-                        help='')
-
-    # Reverse mode: Finds windows in query genome with KLI BELOW threshold. i.e. MORE like the host genome.
+                        help='#FutureFunction: Re-run window scan using modified window parameters \
+                        for HMM revision track.')
     parser.add_argument('--findSelf',
                         action='store_true',
                         default=False,
-                        help='Finds windows in query genome with KLI BELOW threshold. i.e. MORE like the host genome.')
+                        help='Reverse mode: Finds windows in query genome with KLI BELOW threshold. \
+                        i.e. MORE like the host genome.')
 
     args = parser.parse_args()
     if args.minWordSize > args.maxWordSize:
@@ -1127,7 +1157,7 @@ def main():
     ########## Initial housekeeping ##########
     ##########################################
     
-    #Note: Move a lot of this off to class object
+    #Note: Move housekeeping stuff off to session class
     pd.set_option('chained_assignment',None) #Suppress spurious pandas warning
     logging.basicConfig(level=logging.INFO, format=("%(asctime)s - %(funcName)s - %(message)s"))
     args = mainArgs()
@@ -1284,7 +1314,7 @@ def main():
 
     ##########################################
     ##########  Set anomaly feature  #########
-    ####### boundaries using 2-state HMM  ####
+    ######  boundaries using 2-state HMM  ####
     ##########################################
 
     if args.hmmKLI:
@@ -1309,11 +1339,12 @@ def main():
     # Generate cordinate list for anomalous regions
     if args.runProjection:
         if args.dimReduce == 'features':
+            # Merge anomalous windows to preform dimensionality reduction on feature stats
             anomWin  = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=True)
         elif args.dimReduce == 'windows':
             # Anomalous windows by KLI threshold without merging
             anomWin  = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=False)
-        # Extract sequences
+        # Extract nucleotide sequences
         logging.info('Recovering %s sequences from anomalous windows.' % str(len(anomWin)))
         anomSeqs = getBEDSeq(selfGenome, anomWin) #generator object that yields (name,seq) tuples.
 
@@ -1323,10 +1354,13 @@ def main():
         for name, target in anomSeqs:
             logging.info('Computing kmers in %s.' % str(name))
             # Symetrical counting of kmers
-            countMap 	= computeKmers(args, genomepickle=None, window=[(name, target)], genomeMode=False, kmerMap=blankMap, getMeta=False, sym=True)
+            countMap 	= computeKmers(args,genomepickle=None, window=[(name, target)], 
+                                            genomeMode=False, kmerMap=blankMap, 
+                                            getMeta=False, sym=True)
             # Flatten kmer count dictionary to 1D array, and make counts proportional within each kmer length class
-            sclCounts	= flattenKmerMap(countMap, window=args.windowlen, seqLen=len(target), kmin=args.pcaMin, kmax=args.pcaMax, prop=True)
-
+            sclCounts	= flattenKmerMap(countMap, window=args.windowlen, 
+                                            seqLen=len(target), kmin=args.pcaMin, 
+                                            kmax=args.pcaMax, prop=True)
             if counter >= 1:
                 anomLabels = np.vstack([anomLabels, name])
                 anomCounts = np.vstack([anomCounts, sclCounts])
@@ -1342,16 +1376,46 @@ def main():
 
         # Run dimension reduction method of choice on anomaly kmer counts
         if args.runProjection == 'PCA':
-            pca_X = PCA(n_components=3)
+            pca_X = PCA(n_components=args.projectionDims)
             Y = pca_X.fit(anomCounts).transform(anomCounts)
-        elif args.runProjection == 'TSNE': #Note add SKL-TSNE support
-            Y = tsne.tsne(X=anomCounts, no_dims=3, initial_dims=50, perplexity=args.perplexity)
+        elif args.runProjection == 'SKL-TSNE':
+            tsne_model = TSNE(  n_components=args.projectionDims, 
+                                perplexity=args.perplexity, 
+                                early_exaggeration=4.0, 
+                                learning_rate=1000.0, 
+                                n_iter=1000, 
+                                n_iter_without_progress=30, 
+                                min_grad_norm=1e-07, 
+                                metric='euclidean', 
+                                init=args.tsneInitPCA, 
+                                verbose=0, 
+                                random_state=None, 
+                                method=args.tsneGradient,
+                                angle=0.5)
+            np.set_printoptions(suppress=True)
+            Y = tsne_model.fit_transform(anomCounts)
             pca_X = None
-
+        elif args.runProjection == 'PY-TSNE':
+            Y = tsne.tsne(X=anomCounts, no_dims=args.projectionDims, initial_dims=50, perplexity=args.perplexity)
+            pca_X = None
+        elif args.runProjection == 'MDS':
+            MDS_model = MDS(    n_components=args.projectionDims, metric=True, n_init=5, max_iter=500, verbose=0, \
+                                eps=0.001, n_jobs=1, random_state=None, dissimilarity='euclidean')
+            pca_X = None
+            Y = MDS_model.fit_transform(anomCounts)
+        elif args.runProjection == 'IncrementalPCA':
+            IncrementalPCA_model = IncrementalPCA(n_components=args.projectionDims, whiten=False, copy=True, batch_size=None)
+            pca_X = IncrementalPCA_model
+            Y = IncrementalPCA_model.fit(anomCounts).transform(anomCounts)
+        elif args.runProjection == 'NMF':
+            NMF_model = NMF(    n_components=args.projectionDims, init=None, solver='cd', tol=0.0001, max_iter=200, \
+                                random_state=None, alpha=0.0, l1_ratio=0.0, verbose=0, shuffle=False, \
+                                nls_max_iter=2000, sparseness=None, beta=1, eta=0.1)
+            pca_X = None
+            Y = NMF_model.fit(anomCounts).transform(anomCounts)
+        # Run clustering. Optional.
         if args.culster == 'DBSCAN':
-            # Run clustering. Optional.
             dbscan = DBSCAN(eps=args.epsDBSCAN, min_samples=50).fit(Y)
-
             if hasattr(dbscan, 'labels_'):
                 y_pred = dbscan.labels_.astype(np.int)
             else:
@@ -1388,7 +1452,6 @@ def main():
             3) Sort and merge within classes
             4) Print anomalies to file
             5) Print genes withing anomalies '''
-
 
     # Write anomalies as GFF3 outfile
     # Note: Need to incorporate cluster identity if calculated.
