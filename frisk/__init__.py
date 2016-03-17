@@ -252,7 +252,7 @@ def revComplement(kmer):
     revcompl = lambda x: ''.join([{'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A'}[B] for B in x][::-1])
     return revcompl(kmer)
 
-def computeKmers(args, genomepickle=None, window=None, genomeMode=False, kmerMap=None, getMeta=True, sym=False):
+def computeKmers(args, genomepickle=None, window=None, genomeMode=False, pcaMode=False, kmerMap=None, getMeta=True, sym=False):
     """	Compute the kmer counts throughout the kmer range for a sequence or collection of sequences,
         optionally write the output to file."""
     # args					'arguments object'
@@ -281,8 +281,13 @@ def computeKmers(args, genomepickle=None, window=None, genomeMode=False, kmerMap
     nCounter['nnTotal'] = 0
 
     # Prepare all maps
-    kMin    = args.minWordSize
-    kMax    = args.maxWordSize
+    if pcaMode:
+        kMin    = args.pcaMin
+        kMax    = args.pcaMax
+    else:
+        kMin    = args.minWordSize
+        kMax    = args.maxWordSize
+
     # Redefine the blank kmer dict being to avoid edits to the original
     maps    = copy.deepcopy(kmerMap)
     # Iterate over sequences
@@ -1354,11 +1359,14 @@ def main():
         # Counter to manage empty array on first pass
         counter = 0
 
+        # Remake blankMap for pca kmer range, accounts for difference from genome survey kmer range
+        pcaBlankMap = rangeMaps(args.pcaMin, args.pcaMax)
+
         for name, target in anomSeqs:
             logging.info('Computing kmers in %s.' % str(name))
             # Symetrical counting of kmers
             countMap 	= computeKmers(args,genomepickle=None, window=[(name, target)], 
-                                            genomeMode=False, kmerMap=blankMap, 
+                                            genomeMode=False, pcaMode=True, kmerMap=pcaBlankMap, 
                                             getMeta=False, sym=True)
             # Flatten kmer count dictionary to 1D array, and make counts proportional within each kmer length class
             sclCounts	= flattenKmerMap(countMap, window=args.windowlen, 
