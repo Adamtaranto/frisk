@@ -252,7 +252,7 @@ def revComplement(kmer):
     revcompl = lambda x: ''.join([{'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A'}[B] for B in x][::-1])
     return revcompl(kmer)
 
-def computeKmers(args, genomepickle=None, window=None, genomeMode=False, kmerMap=None, getMeta=True, sym=False):
+def computeKmers(args, genomepickle=None, window=None, genomeMode=False, pcaMode=False, kmerMap=None, getMeta=True, sym=False):
     """	Compute the kmer counts throughout the kmer range for a sequence or collection of sequences,
         optionally write the output to file."""
     # args					'arguments object'
@@ -281,8 +281,13 @@ def computeKmers(args, genomepickle=None, window=None, genomeMode=False, kmerMap
     nCounter['nnTotal'] = 0
 
     # Prepare all maps
-    kMin    = args.minWordSize
-    kMax    = args.maxWordSize
+    if pcaMode:
+        kMin    = args.pcaMin
+        kMax    = args.pcaMax
+    else:
+        kMin    = args.minWordSize
+        kMax    = args.maxWordSize
+
     # Redefine the blank kmer dict being to avoid edits to the original
     maps    = copy.deepcopy(kmerMap)
     # Iterate over sequences
@@ -341,55 +346,57 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
         Should include a final dict with N count for each kmer length.
         Calculates weights Wi(=Counts*deg_freedom) and obs_freqs (Pi)'''
     windowlen   = args.windowlen
-    klen        = args.maxWordSize
+    maxKlen     = args.maxWordSize
+    minKlen     = args.minWordSize
+    kRange      = maxKlen - minKlen #Equal to index position of maxmer
 
     # Note: Alternative define total genome space as total readable number of maxmers.
-    genomeSpace = GenomeKmers[klen]['totalLen'] - GenomeKmers[klen+2]['nnTotal']
-    windowSpace = windowKmers[klen]['totalLen'] - windowKmers[klen+2]['nnTotal']
+    genomeSpace = GenomeKmers[kRange+1]['totalLen'] - GenomeKmers[kRange+3]['nnTotal']
+    windowSpace = windowKmers[kRange+1]['totalLen'] - windowKmers[kRange+3]['nnTotal']
 
     sumWindowIVOM = 0
     subKmers = dict()
     storeMaxMerIVOM = dict()
     # For each max len kmer
-    for k in windowKmers[klen-1]:
+    for k in windowKmers[kRange]:
         # Skip kmers that do not occur in window - this could be more efficient.
-        if windowKmers[klen-1][k] == 0:
+        if windowKmers[kRange][k] == 0:
             continue
-        count = windowKmers[klen-1][k]
+        count = windowKmers[kRange][k]
         subKmers['w'] = dict()
         subKmers['p'] = dict()
 
         if not isGenomeIVOM: #Calculating IVOM weights for window kmers against window counts
-            for x in range(1, klen+1):
+            for x in range(minKlen, maxKlen+1):
                 # Process maxmer
-                if x == klen:
+                if x == maxKlen:
                     # Note:Weighting could probably be achieved by observations multiplied by kmerlen squared i.e. count * x**2
                     subKmers['w'][x] = count * 4**x # kmer_count * (DNA bases^seqlength)
                     # Note: Should probability of observing x count of k be = x /total available non-N kmers in window?
                     subKmers['p'][x] = float(count) / ((windowSpace-(x-1)) * 2)
                 elif x >= 2:
                     subK = k[0:x] #Grab the first x bases in maxmer
-                    subKmers['w'][x] = windowKmers[x-1][subK] * 4**x
-                    subKmers['p'][x] = float(windowKmers[x-1][subK]) / ((windowSpace - (x-1)) * 2)
+                    subKmers['w'][x] = windowKmers[x-minKlen][subK] * 4**x
+                    subKmers['p'][x] = float(windowKmers[x-minKlen][subK]) / ((windowSpace - (x-1)) * 2)
                 else:
                     subK = k[0] #Grab the first base in maxmer
-                    subKmers['w'][x] = windowKmers[x-1][subK] * 4**x
-                    subKmers['p'][x] = float(windowKmers[x-1][subK]) / ((windowSpace) * 2)
+                    subKmers['w'][x] = windowKmers[x-minKlen][subK] * 4**x
+                    subKmers['p'][x] = float(windowKmers[x-minKlen][subK]) / ((windowSpace) * 2)
 
         else: #Calculating IVOM weights for current window kmer against genome counts
-            for x in range(1, klen+1):
+            for x in range(minKlen, maxKlen+1):
                 # Process maxmer
-                if x == klen:
-                    subKmers['w'][x] = GenomeKmers[x-1][k] * 4**x
-                    subKmers['p'][x] = float(GenomeKmers[x-1][k]) / ((genomeSpace - (x-1)) * 2)
+                if x == maxKlen:
+                    subKmers['w'][x] = GenomeKmers[x-minKlen][k] * 4**x
+                    subKmers['p'][x] = float(GenomeKmers[x-minKlen][k]) / ((genomeSpace - (x-1)) * 2)
                 elif x >= 2:
                     subK = k[0:x] #Grab the first x bases in maxmer
-                    subKmers['w'][x] = GenomeKmers[x-1][subK] * 4**x
-                    subKmers['p'][x] = float(GenomeKmers[x-1][subK]) / ((genomeSpace - (x-1)) * 2)
+                    subKmers['w'][x] = GenomeKmers[x-minKlen][subK] * 4**x
+                    subKmers['p'][x] = float(GenomeKmers[x-minKlen][subK]) / ((genomeSpace - (x-1)) * 2)
                 else:
                     subK = k[0] #Grab the first base in maxmer
-                    subKmers['w'][x] = GenomeKmers[x-1][subK] * 4**x
-                    subKmers['p'][x] = float(GenomeKmers[x-1][subK]) / (genomeSpace * 2)
+                    subKmers['w'][x] = GenomeKmers[x-minKlen][subK] * 4**x
+                    subKmers['p'][x] = float(GenomeKmers[x-minKlen][subK]) / (genomeSpace * 2)
 
         w_total = 0
         w_running_totals = dict()
@@ -400,22 +407,22 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
             w_running_totals[x] = w_total
 
         scaledW = dict()
-        for x in range(1, klen+1):
+        for x in range(minKlen, maxKlen+1):
             # Note: Weighting of sub-kmers not explictily addressed in Vernikos and Parkhill.
             scaledW[x] = float(subKmers['w'][x]) / w_running_totals[x]
 
         kmerIVOM = dict()
-        for x in range(1, klen+1):
-            if x == 1:
+        for x in range(minKlen, maxKlen+1):
+            if x == minKlen:
                 kmerIVOM[x] = scaledW[x] * subKmers['p'][x]
-            elif x < klen:
+            elif x < maxKlen:
                 kmerIVOM[x] = scaledW[x] * subKmers['p'][x] + ((1-scaledW[x]) * kmerIVOM[x-1])
             else: #IVOM for max len kmer
                 kmerIVOM[x] = scaledW[x] * subKmers['p'][x] + ((1-scaledW[x]) * kmerIVOM[x-1])
 
-        storeMaxMerIVOM[k] = kmerIVOM[klen]
+        storeMaxMerIVOM[k] = kmerIVOM[maxKlen]
         # Note: In Genome mode 'window' is eqivalent to whole readable genome space.
-        sumWindowIVOM += kmerIVOM[klen]
+        sumWindowIVOM += kmerIVOM[maxKlen]
 
     # Rescale each kmer from 0 to 1 (because relative entropy)
     for k in storeMaxMerIVOM:
@@ -439,19 +446,20 @@ def KLI(GenomeIVOM, windowIVOM, args):
         # Note: Using log2 instead of log10 to accentuate variance within small range.
     return windowKLI
 
-def calcRIP(windowKmers):
+def calcRIP(windowKmers,args):
     """	Calculate measures of Repeat Induced Point mutation (RIP);
         a process in fungal genomes which affects CpA --> TpA
         transition mutations. """
+    dinucIdx = range(args.minWordSize, args.maxWordSize + 1).index(2)
     # Product Index
-    if windowKmers[1]['AT'] > 0:
-        PI = windowKmers[1]['TA'] / float(windowKmers[1]['AT'])
+    if windowKmers[dinucIdx]['AT'] > 0:
+        PI = windowKmers[dinucIdx]['TA'] / float(windowKmers[dinucIdx]['AT'])
     else:
         PI = None
     # Substrate index
-    AC_GT = (windowKmers[1]['AC'] + windowKmers[1]['GT'])
+    AC_GT = (windowKmers[dinucIdx]['AC'] + windowKmers[dinucIdx]['GT'])
     if AC_GT > 0:
-        SI = (windowKmers[1]['CA'] + windowKmers[1]['TG']) / float(AC_GT)
+        SI = (windowKmers[dinucIdx]['CA'] + windowKmers[dinucIdx]['TG']) / float(AC_GT)
     else:
         SI = None
     # Composite RIP Index
@@ -569,6 +577,34 @@ def thresholdKLI(intervalList, threshold, args, threshCol='windowKLI', merge=Tru
     else:
         anomalies = anomaliesBED
     return anomalies
+
+def setKLIThresh(args, logKLI):
+    # Calc optimal bins for KLI data
+    if FDBins(logKLI) < 30:
+        optBins = 30
+    else:
+        optBins = FDBins(logKLI)
+    if args.threshTypeKLI or args.forceThresholdKLI:
+        # Check for user specified KLI threshold
+        if args.forceThresholdKLI:
+            KLIthreshold = np.log10(float(args.forceThresholdKLI))
+            logging.info('Forcing log10(KLI) threshold = %s' % str(KLIthreshold))
+        # Use Otsu method to set threshold
+        elif args.threshTypeKLI == 'otsu':
+            logging.info('Calculating optimal KLI threshold by Otsu binarization.')
+            if FDBins(logKLI) < 10: #Calculate optimal number of bins for logKLI set using Freedman-Diaconnis method.
+                logging.warning('[WARNING] Low variance in log10(KLI) data: Review data distribution, \
+                                consider percentile or manual thresholding.')
+                KLIthreshold = otsu(logKLI, optBins) #Attempt Otsu, though probably not a good idea.
+                logging.info('Optimal log10(KLI) threshold = %s' % str(KLIthreshold))
+            else:
+                KLIthreshold = otsu(logKLI, optBins) #Use Otsu binarization to calc optimal log10 threshold for weird KLI scores
+                logging.info('Optimal log10(KLI) threshold = %s' % str(KLIthreshold))
+        # Optional set threshold at percentile
+        elif args.threshTypeKLI == 'percentile':
+            KLIthreshold = np.percentile(logKLI, args.percentileKLI)
+            logging.info('Setting threshold at %s percentile of log10(KLI)= %s' % (str(args.percentileKLI), str(KLIthreshold)))
+    return KLIthreshold,optBins
 
 def thresholdRIP(intervalList, args):
     logging.info('Extracting RIP features: CRImin = %s, PImin = %s, SImax = %s, CRIpeak = %s \
@@ -703,13 +739,16 @@ def pcaAxisLabels(pca_X, kmin=1, kmax=6):
         for y in x.keys():
             keylist.append(y)
     for x in pca_X.explained_variance_ratio_:
-        labelString = 'PC%s: %s (%s%%)' % (str(idx+1), str(keylist[np.argmax(pca_X.components_[idx])]), str(round(x*100,2)))
+        labelString = 'PC%s: %s/%s (%s%%)' % (str(idx+1), 
+            str(keylist[np.argmax(pca_X.components_[idx])]),
+            revComplement(str(keylist[np.argmax(pca_X.components_[idx])])), 
+            str(round(x*100,2)))
         axisLabels.append(labelString)
         idx += 1
     return axisLabels
 
 def makeScatter(Y,args,pca_X=None,y_pred=None):
-    if not args.culster:
+    if not args.cluster:
         if pca_X:
             axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
             # Generate graphic
@@ -726,7 +765,7 @@ def makeScatter(Y,args,pca_X=None,y_pred=None):
             plt.ylabel('Y')
             plt.scatter(Y[:, 0], Y[:, 1], color='blue', alpha=0.4, label='kmer_Anomaly')
 
-    elif args.culster:
+    elif args.cluster:
         colors = np.array([x for x in 'bgrcmykbgrcmykbgrcmykbgrcmyk'])
         colors = np.hstack([colors] * 20)
         markers = np.array([x for x in '+o^8s^Do+o^8s^Do+o^8s^Do+o^8s^Do*'])
@@ -1079,7 +1118,7 @@ def mainArgs():
                         default='windows',
                         choices=['features', 'windows'],
                         help='Run dimensionality reduction on all anomalous features, or on merged features.')
-    parser.add_argument('--culster',
+    parser.add_argument('--cluster',
                         default=None,
                         choices=[None, 'DBSCAN'], #Note: Add support for kmeans later
                         help='Attempt clustering on projection.')
@@ -1148,7 +1187,7 @@ def mainArgs():
 
     args = parser.parse_args()
     if args.minWordSize > args.maxWordSize:
-        logging.error('[ERROR] Minimum kmer size (-c/--minKmerSize) must be less than Maximum kmer size (-k/--maxKmerSize)\n')
+        logging.error('[ERROR] Minimum kmer size (-m/--minWordSize) must be less than Maximum kmer size (-k/--maxWordSize)\n')
         sys.exit(1)
     return args
 
@@ -1182,7 +1221,6 @@ def main():
 
     # Read in query genome sequences as dict keyed by seq name
     selfGenome, nBlocks = getFasta(querySeq)
-
     ##########################################
     #########  Import or Calculate   #########
     #########   Genome kmer Counts   #########
@@ -1218,7 +1256,7 @@ def main():
         handle  = open(outPath, "w")
 
         # Pandas dataframe to store KLI and RIP stats by window
-        if args.RIP:
+        if (args.RIP) and (args.minWordSize <= 2):
             columns = ['name', 'start', 'stop', 'windowKLI', 'PI', 'SI', 'CRI']
         else:
             columns = ['name', 'start', 'stop', 'windowKLI']
@@ -1235,8 +1273,8 @@ def main():
             GenomeIVOM  	= IvomBuild(windowKmers, args, genomeKmers, True)
             windowIVOM  	= IvomBuild(windowKmers, args, genomeKmers, False)
             windowKLI		= KLI(GenomeIVOM, windowIVOM, args)
-            if args.RIP:
-                PI, SI, CRI 	= calcRIP(windowKmers)
+            if (args.RIP) and (args.minWordSize <= 2):
+                PI, SI, CRI 	= calcRIP(windowKmers,args)
                 outString	= [name, str(start), str(stop), str(windowKLI), str(PI), str(SI), str(CRI)]
                 allWindows.loc[len(allWindows)]=[name, start, stop, windowKLI, PI, SI, CRI]
             else:
@@ -1263,7 +1301,7 @@ def main():
     ###########  Calculate and Set  ##########
     #############  RIP threshold  ############
     ##########################################
-    if args.RIP:
+    if (args.RIP) and (args.minWordSize <= 2):
         PI		=	allWindows.as_matrix(columns=['PI'])
         SI		=	allWindows.as_matrix(columns=['SI'])
         CRI		=	allWindows.as_matrix(columns=['CRI'])
@@ -1271,7 +1309,6 @@ def main():
         PI		=	PI[~np.isnan(PI)]
         SI		=	SI[~np.isnan(SI)]
         CRI		=	CRI[~np.isnan(CRI)]
-
 
     ##########################################
     ###########  Calculate and Set  ##########
@@ -1281,36 +1318,7 @@ def main():
     # Get KLI data for all surveyed windows
     allKLI 			=	allWindows.as_matrix(columns=['windowKLI'])
     logKLI 			=	np.log10(allKLI)
-    KLIthreshold	=	None
-
-    # Calc optimal bins for KLI data
-    if FDBins(logKLI) < 30:
-        optBins = 30
-    else:
-        optBins = FDBins(logKLI)
-
-    if args.threshTypeKLI or args.forceThresholdKLI:
-        # Check for user specified KLI threshold
-        if args.forceThresholdKLI:
-            KLIthreshold = np.log10(float(args.forceThresholdKLI))
-            logging.info('Forcing log10(KLI) threshold = %s' % str(KLIthreshold))
-
-        # Use Otsu method to set threshold
-        elif args.threshTypeKLI == 'otsu':
-            logging.info('Calculating optimal KLI threshold by Otsu binarization.')
-            if FDBins(logKLI) < 10: #Calculate optimal number of bins for logKLI set using Freedman-Diaconnis method.
-                logging.warning('[WARNING] Low variance in log10(KLI) data: Review data distribution, \
-                    			consider percentile or manual thresholding.')
-                KLIthreshold = otsu(logKLI, optBins) #Attempt Otsu, though probably not a good idea.
-                logging.info('Optimal log10(KLI) threshold = %s' % str(KLIthreshold))
-            else:
-                KLIthreshold = otsu(logKLI, optBins) #Use Otsu binarization to calc optimal log10 threshold for weird KLI scores
-                logging.info('Optimal log10(KLI) threshold = %s' % str(KLIthreshold))
-
-        # Optional set threshold at percentile
-        elif args.threshTypeKLI == 'percentile':
-            KLIthreshold = np.percentile(logKLI, args.percentileKLI)
-            logging.info('Setting threshold at %s percentile of log10(KLI)= %s' % (str(args.percentileKLI), str(KLIthreshold)))
+    KLIthreshold,optBins	=	setKLIThresh(args, logKLI)
 
     ##########################################
     ##########  Set anomaly feature  #########
@@ -1351,11 +1359,14 @@ def main():
         # Counter to manage empty array on first pass
         counter = 0
 
+        # Remake blankMap for pca kmer range, accounts for difference from genome survey kmer range
+        pcaBlankMap = rangeMaps(args.pcaMin, args.pcaMax)
+
         for name, target in anomSeqs:
             logging.info('Computing kmers in %s.' % str(name))
             # Symetrical counting of kmers
             countMap 	= computeKmers(args,genomepickle=None, window=[(name, target)], 
-                                            genomeMode=False, kmerMap=blankMap, 
+                                            genomeMode=False, pcaMode=True, kmerMap=pcaBlankMap, 
                                             getMeta=False, sym=True)
             # Flatten kmer count dictionary to 1D array, and make counts proportional within each kmer length class
             sclCounts	= flattenKmerMap(countMap, window=args.windowlen, 
@@ -1414,7 +1425,7 @@ def main():
             pca_X = None
             Y = NMF_model.fit(anomCounts).transform(anomCounts)
         # Run clustering. Optional.
-        if args.culster == 'DBSCAN':
+        if args.cluster == 'DBSCAN':
             dbscan = DBSCAN(eps=args.epsDBSCAN, min_samples=50).fit(Y)
             if hasattr(dbscan, 'labels_'):
                 y_pred = dbscan.labels_.astype(np.int)
@@ -1461,7 +1472,7 @@ def main():
             handle.write(i)
         handle.close()
 
-    if args.RIP:
+    if (args.RIP) and (args.minWordSize <= 2):
         RIPbed	= thresholdRIP(allWindows, args) #name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
         if RIPbed:
             handle  = open(os.path.join(args.tempDir, args.RIPgff), "w")
@@ -1551,7 +1562,7 @@ def main():
                 pdf.savefig()
                 plt.close()
                 
-            if args.RIP:
+            if (args.RIP) and (args.minWordSize <= 2):
                 plt.figure()
                 plt.title('Composite RIP Index')
                 sns.set(color_codes=True)
