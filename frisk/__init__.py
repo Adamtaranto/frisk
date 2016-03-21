@@ -198,6 +198,10 @@ def crawlGenome(args, querySeq):
                 yield (seq, name, 1, size)
                 windowCount += 1
                 nSeqs += 1
+        elif size <= w + ((w * 0.75) - i):
+            logging.info('%s excluded as below minimum scaffold length of %s.' % (name, str(w + ((w * 0.75) - i))))
+            winExclude += 1
+            continue
         else:
             # Crawl sequence in multiples of increment length until one increment from end of seq
             for j in xrange(0, size - i + 1, i):
@@ -455,18 +459,18 @@ def calcRIP(windowKmers,args):
     if windowKmers[dinucIdx]['AT'] > 0:
         PI = windowKmers[dinucIdx]['TA'] / float(windowKmers[dinucIdx]['AT'])
     else:
-        PI = None
+        PI = np.NaN
     # Substrate index
     AC_GT = (windowKmers[dinucIdx]['AC'] + windowKmers[dinucIdx]['GT'])
     if AC_GT > 0:
         SI = (windowKmers[dinucIdx]['CA'] + windowKmers[dinucIdx]['TG']) / float(AC_GT)
     else:
-        SI = None
+        SI = np.NaN
     # Composite RIP Index
     if PI and SI:
         CRI = PI - SI
     else:
-        CRI = None
+        CRI = np.NaN
     return (PI, SI, CRI)
 
 def makePicklePath(args, **kwargs):
@@ -674,7 +678,7 @@ def updateHMM(smallHMM, bigThresh): #BED interval objects. A = Fine scale guide,
 def	hmm2BED(allWindows, model, dataCol='windowKLI'):
     allIntervals	=	list()
     # Add empty column to store hmm state data
-    allWindows['hmmState'] = np.nan
+    allWindows['hmmState'] = np.NaN
     # Get unique scaffold names from tuples in allWindows
     scaffoldList	= 	[i for i in Counter(elem for elem in allWindows['name'])]
     for name in scaffoldList:
@@ -691,21 +695,23 @@ def	hmm2BED(allWindows, model, dataCol='windowKLI'):
         # Merge stretches of continuous state as interval annotation
         stateRange1 = 	findBaseRanges(stateSeq, 0)
         stateRange2 = 	findBaseRanges(stateSeq, 1)
-        for i in range2interval(stateRange1, scaffoldWin, 'State1'):
-            allIntervals.append(i)
-        for i in range2interval(stateRange2, scaffoldWin, 'State2'):
-            allIntervals.append(i)
+        if stateRange1:
+            for i in range2interval(stateRange1, scaffoldWin, 'State1'):
+                allIntervals.append(i)
+        if stateRange2:
+            for i in range2interval(stateRange2, scaffoldWin, 'State2'):
+                allIntervals.append(i)
     allIntervals 	= 	sorted(allIntervals, key=itemgetter(0, 1, 2))
     allBED 			= 	pybedtools.BedTool(allIntervals)
     return allBED,allWindows
 
 def range2interval(rangeList, scaffoldWindows, state):
-    scaffoldWindows.reset_index(drop=True)
+    reIndexWin = scaffoldWindows.reset_index(drop=True)
     for block in rangeList:
         yield (
-        str(scaffoldWindows['name'][0]),
-        str(int(scaffoldWindows['start'][block[0]])), 
-        str(int(scaffoldWindows['stop'][block[1]])), 
+        str(reIndexWin['name'][0]),
+        str(int(reIndexWin['start'][block[0]])), 
+        str(int(reIndexWin['stop'][block[1]])), 
         str(state)
         )
 
@@ -748,22 +754,24 @@ def pcaAxisLabels(pca_X, kmin=1, kmax=6):
     return axisLabels
 
 def makeScatter(Y,args,pca_X=None,y_pred=None):
+    #sns.set_style("ticks")
+    #sns.despine()
     if not args.cluster:
         if pca_X:
             axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
-            # Generate graphic
             plt.figure()
+            sns.set_style("ticks")
             plt.title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
-            plt.xlabel(axisLabels[0])
-            plt.ylabel(axisLabels[1])
-            plt.scatter(Y[:, 0], Y[:, 1], color='blue', alpha=0.4, label='kmer_Anomaly')
-
+            ax = sns.regplot(x=Y[:, 0], y=Y[:, 1], color='blue', fit_reg=False, scatter_kws={'alpha':0.4,"s": 20})
+            ax.set(xlabel=axisLabels[0], ylabel=axisLabels[1])
+            sns.despine()
         elif args.runProjection in ('PY-TSNE','SKL-TSNE','IncrementalPCA', 'NMF', 'MDS'):
             plt.figure()
+            sns.set_style("ticks")
             plt.title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
             plt.xlabel('X')
             plt.ylabel('Y')
-            plt.scatter(Y[:, 0], Y[:, 1], color='blue', alpha=0.4, label='kmer_Anomaly')
+            sns.regplot(x=Y[:, 0], y=Y[:, 1], color='blue', fit_reg=False, scatter_kws={'alpha':0.4,"s": 20})
 
     elif args.cluster:
         colors = np.array([x for x in 'bgrcmykbgrcmykbgrcmykbgrcmyk'])
@@ -771,7 +779,7 @@ def makeScatter(Y,args,pca_X=None,y_pred=None):
         markers = np.array([x for x in '+o^8s^Do+o^8s^Do+o^8s^Do+o^8s^Do*'])
         markers = np.hstack([markers] * 20)
 
-        # List dbscan classes
+        # List of dbscan classes
         y_class = np.unique(y_pred)
         # List to hold scatterplots for each class
         scatter_class = np.unique(y_pred).tolist()
@@ -786,18 +794,37 @@ def makeScatter(Y,args,pca_X=None,y_pred=None):
             else:
                 names_class[i] = 'Class_' + str(i)
 
-        fig = plt.figure() #figsize=(8,8)
-        ax = fig.add_subplot(111)
+        # Generate scatterplots for each class using pca coords
+        Y_frame = pd.DataFrame(Y)
+        Y_frame['Class'] = y_pred
+        Y_frame['Class_Label'] = np.NaN
+        
+        #Append class labels
+        for i in y_class:
+            Y_slice = Y_frame.loc[(Y_frame['Class'] == i)]
+            Y_slice['Class_Label'] = names_class[np.where(y_class ==i)[0][0]]
+            Y_frame.loc[Y_slice.index.values] = Y_slice
+
+        #Make palettes for facetGrid
+        #pal   = dict()
+        #mar_order   = list()
+        #name_order = list()
+        #for i in y_class:
+        #    pal[names_class[np.where(y_class ==i)[0][0]]] = colors[i]
+        #    mar_order = markers[i]
+        #    name_order.append(names_class[np.where(y_class == i)[0][0]])
+
+        sns.set(color_codes=True, style='ticks')
+        fig, ax = plt.subplots()
         box = ax.get_position()
         ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
-
-        # Generate scatterplots for each class using pca coords
         for i in y_class:
-            X_class = Y[np.where(y_pred == i)]
-            scatter_idx = np.where(scatter_class == i)[0][0]
-            scatter_class[scatter_idx] = plt.scatter(X_class[:, 0], X_class[:, 1], color=colors[i], marker=markers[i], s=20)
-
-        ax.legend(scatter_class, names_class, loc='center left', bbox_to_anchor=(1, 0.5))
+            X_class = Y_frame.loc[(Y_frame['Class'] == i)]
+            sns.regplot(X_class[0], X_class[1], fit_reg=False, ax=ax, 
+                        label=['Class_Label'][0], marker=markers[i], 
+                        color=colors[i], scatter_kws={"s": 20})
+        ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), borderaxespad=0.)
+        sns.despine()
 
         if pca_X:
             axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
@@ -851,6 +878,9 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     # Decide which chromosomes to use
     chromosome_list = natural_sort(selfGenome.keys())
     chromosome_list = [str(i) for i in chromosome_list]
+    if args.chrmlist:
+        common_chrms    = [i for i in set(chromosome_list).intersection(args.chrmlist)]
+        chromosome_list = natural_sort(common_chrms)
     #Get chr lengths
     chromo_dict = dict()
     for chr in chromosome_list:
@@ -877,6 +907,8 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     scaffolds['width'] = scaffolds.end - scaffolds.start
     scaffolds['colors'] = '#eeeeee'
 
+    ##Run merge on anomaly intervals, makes bands clearer for 'window' based anomalies
+    anomBED  = anomBED.merge(d=0)
     ##Read in anomalies
     features = pd.read_table(anomBED.fn, names=['chrom', 'start', 'end'],usecols=range(3))
     # Filter out chromosomes not in our list
@@ -1162,6 +1194,11 @@ def mainArgs():
                         default=10,
                         help='Set eps value for DBSCAN, will attempt to cluster points < "eps" distance apart. \
                         Note: Typically smaller for PCA (0.01 - 3.0), than for t-SNE (5-20).')
+    #Graphics options
+    parser.add_argument('--chrmlist',
+                        default=None,
+                        nargs='+',
+                        help='List of chromosomes / scaffolds from query genome to include in ouput graphics.')
 
     # Revise feature boundaries using HMM split track with reduced window and increment size
     # Note: Not yet implemented
@@ -1302,9 +1339,9 @@ def main():
     #############  RIP threshold  ############
     ##########################################
     if (args.RIP) and (args.minWordSize <= 2):
-        PI		=	allWindows.as_matrix(columns=['PI'])
-        SI		=	allWindows.as_matrix(columns=['SI'])
-        CRI		=	allWindows.as_matrix(columns=['CRI'])
+        PI		=	allWindows.as_matrix(columns=['PI']).astype(float)
+        SI		=	allWindows.as_matrix(columns=['SI']).astype(float)
+        CRI		=	allWindows.as_matrix(columns=['CRI']).astype(float)
         # Scrub NANs
         PI		=	PI[~np.isnan(PI)]
         SI		=	SI[~np.isnan(SI)]
@@ -1316,7 +1353,7 @@ def main():
     ##########################################
 
     # Get KLI data for all surveyed windows
-    allKLI 			=	allWindows.as_matrix(columns=['windowKLI'])
+    allKLI 			=	allWindows.as_matrix(columns=['windowKLI']).astype(float)
     logKLI 			=	np.log10(allKLI)
     KLIthreshold,optBins	=	setKLIThresh(args, logKLI)
 
@@ -1535,18 +1572,24 @@ def main():
 
         with PdfPages(os.path.join(args.tempDir, args.graphics)) as pdf:
             plt.figure()
-            plt.title('log10(KLI) Distribution')
+            sns.set_style("ticks")
+            plt.title('Genome-wide Self Similarity Distribution')
             sns.set(color_codes=True)
-            sns.distplot(logKLI, hist=True, bins=100, kde=False, rug=False, color="b")
+            ax = sns.distplot(logKLI, hist=True, bins=100, kde=False, rug=False, color="b")
+            ax.set(xlabel='log10 Kullback-Leibler Divergence', ylabel='Genomic Window Count')
+            sns.despine()
             if KLIthreshold:
                 plt.axvline(KLIthreshold, color='r', linestyle='dashed', linewidth=2)
             pdf.savefig() # saves the current figure into a pdf page
             plt.close()
 
             plt.figure()
-            plt.title('Raw KLI Distribution')
+            sns.set_style("ticks")
+            plt.title('Genome-wide Self Similarity Distribution')
             sns.set(color_codes=True)
-            sns.distplot(allKLI, hist=True, bins=optBins, kde=False, rug=False, color="b")
+            ax = sns.distplot(allKLI, hist=True, bins=optBins, kde=False, rug=False, color="b")
+            ax.set(xlabel='Raw Kullback-Leibler Divergence', ylabel='Genomic Window Count')
+            sns.despine()
             pdf.savefig()  
             plt.close()
 
@@ -1566,21 +1609,30 @@ def main():
                 plt.figure()
                 plt.title('Composite RIP Index')
                 sns.set(color_codes=True)
-                sns.distplot(CRI, hist=True, bins=100, kde=False, rug=False, color="b")
+                ax = sns.distplot(CRI, hist=True, bins=100, kde=False, rug=False, color="b")
+                ax.set(xlabel='Composite RIP Index', ylabel='Genomic Window Count')
+                sns.set_style("ticks")
+                sns.despine()
                 pdf.savefig()
                 plt.close()
 
                 plt.figure()
                 plt.title('RIP Product Index')
                 sns.set(color_codes=True)
-                sns.distplot(PI, hist=True, bins=100, kde=False, rug=False, color="b")
+                ax = sns.distplot(PI, hist=True, bins=100, kde=False, rug=False, color="b")
+                ax.set(xlabel='RIP Product Index', ylabel='Genomic Window Count')
+                sns.set_style("ticks")
+                sns.despine()
                 pdf.savefig()
                 plt.close()
 
                 plt.figure()
                 plt.title('RIP Substrate Index')
                 sns.set(color_codes=True)
-                sns.distplot(SI, hist=True, bins=100, kde=False, rug=False, color="b")
+                ax = sns.distplot(SI, hist=True, bins=100, kde=False, rug=False, color="b")
+                ax.set(xlabel='RIP Substrate Index', ylabel='Genomic Window Count')
+                sns.set_style("ticks")
+                sns.despine()
                 pdf.savefig()
                 plt.close()
 
