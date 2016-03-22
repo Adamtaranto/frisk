@@ -753,25 +753,28 @@ def pcaAxisLabels(pca_X, kmin=1, kmax=6):
         idx += 1
     return axisLabels
 
-def makeScatter(Y,args,pca_X=None,y_pred=None):
-    #sns.set_style("ticks")
-    #sns.despine()
+def makeScatter(Y,args,pdf,labels=None,pca_X=None,y_pred=None):
     if not args.cluster:
         if pca_X:
             axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
-            plt.figure()
+            fig1, ax1 = plt.subplots()
             sns.set_style("ticks")
-            plt.title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
-            ax = sns.regplot(x=Y[:, 0], y=Y[:, 1], color='blue', fit_reg=False, scatter_kws={'alpha':0.4,"s": 20})
-            ax.set(xlabel=axisLabels[0], ylabel=axisLabels[1])
+            ax1.set_title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
+            sns.regplot(x=Y[:, 0], y=Y[:, 1], ax=ax1, color='blue', fit_reg=False, scatter_kws={'alpha':0.4,"s": 20})
+            ax1.set(xlabel=axisLabels[0], ylabel=axisLabels[1])
             sns.despine()
+            pdf.savefig()
+            plt.close(fig1)
         elif args.runProjection in ('PY-TSNE','SKL-TSNE','IncrementalPCA', 'NMF', 'MDS'):
-            plt.figure()
+            fig1, ax1 = plt.subplots()
             sns.set_style("ticks")
-            plt.title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
-            plt.xlabel('X')
-            plt.ylabel('Y')
-            sns.regplot(x=Y[:, 0], y=Y[:, 1], color='blue', fit_reg=False, scatter_kws={'alpha':0.4,"s": 20})
+            ax1.set_title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
+            ax1.set_xlabel('X')
+            ax1.set_ylabel('Y')
+            sns.regplot(x=Y[:, 0], y=Y[:, 1], ax=ax1, color='blue', fit_reg=False, scatter_kws={'alpha':0.4,"s": 20})
+            sns.despine()
+            pdf.savefig()
+            plt.close(fig1)
 
     elif args.cluster:
         colors = np.array([x for x in 'bgrcmykbgrcmykbgrcmykbgrcmyk'])
@@ -803,39 +806,67 @@ def makeScatter(Y,args,pca_X=None,y_pred=None):
         for i in y_class:
             Y_slice = Y_frame.loc[(Y_frame['Class'] == i)]
             Y_slice['Class_Label'] = names_class[np.where(y_class ==i)[0][0]]
+            #Add colours column
             Y_frame.loc[Y_slice.index.values] = Y_slice
 
-        #Make palettes for facetGrid
-        #pal   = dict()
-        #mar_order   = list()
-        #name_order = list()
-        #for i in y_class:
-        #    pal[names_class[np.where(y_class ==i)[0][0]]] = colors[i]
-        #    mar_order = markers[i]
-        #    name_order.append(names_class[np.where(y_class == i)[0][0]])
+        #Split labels
+
+        #Join labels to Y_frame 'chrom' 'start' 'end' 'colors'
+
+        #Make palettes for data aware grids
+        pal   = dict()
+        mar_order   = list()
+        name_order = list()
+        for i in y_class:
+            pal[names_class[np.where(y_class ==i)[0][0]]] = colors[i]
+            mar_order = markers[i]
+            name_order.append(names_class[np.where(y_class == i)[0][0]])
 
         sns.set(color_codes=True, style='ticks')
-        fig, ax = plt.subplots()
-        box = ax.get_position()
-        ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+        fig1, ax1 = plt.subplots()
+        box = ax1.get_position()
+        ax1.set_position([box.x0, box.y0, box.width * 0.8, box.height])
         for i in y_class:
             X_class = Y_frame.loc[(Y_frame['Class'] == i)]
-            sns.regplot(X_class[0], X_class[1], fit_reg=False, ax=ax, 
+            sns.regplot(X_class[0], X_class[1], fit_reg=False, ax=ax1, 
                         label=['Class_Label'][0], marker=markers[i], 
                         color=colors[i], scatter_kws={"s": 20})
-        ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), borderaxespad=0.)
+        ax1.legend(loc='center left', bbox_to_anchor=(1, 0.5), borderaxespad=0.)
         sns.despine()
 
         if pca_X:
             axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
-            plt.title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
-            plt.xlabel(axisLabels[0])
-            plt.ylabel(axisLabels[1])
+            ax1.set_title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
+            ax1.set_xlabel(axisLabels[0])
+            ax1.set_ylabel(axisLabels[1])
 
         elif args.runProjection in ('PY-TSNE','SKL-TSNE', 'IncrementalPCA', 'NMF', 'MDS'):
-            plt.title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
+            ax1.set_title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
 
-def chromosome_collections(df, y_positions, height,  **kwargs):
+        pdf.savefig()
+        plt.close(fig1)
+
+        #Experimental: Pairplot to display all pairwise PCA
+        #sns.plt.switch_backend('TkAgg')
+        #plt.switch_backend('cairo')
+        #fig = plt.figure()
+        #rc={'backend': 'cairo'}
+        #sns.set_context(rc=rc)
+        #g = sns.pairplot(Y_frame,
+        #            hue='Class_Label',
+        #            hue_order=name_order,
+        #            palette=pal,
+        #            vars=range(args.projectionDims),
+        #            kind='scatter',
+        #            diag_kind='hist',
+        #            markers=mar_order,
+        #            size=2.5,
+        #            aspect=1,
+        #            dropna=True)
+        #pdf.savefig()
+        #plt.close()
+
+def chromosome_collections(df, y_positions, height, trackOffset, padding, **kwargs):
     """
     Yields BrokenBarHCollection of features that can be added to an Axes
     object.
@@ -856,7 +887,7 @@ def chromosome_collections(df, y_positions, height,  **kwargs):
         del_width = True
         df['width'] = df['end'] - df['start']
     for chrom, group in df.groupby('chrom'):
-        yrange = (y_positions[chrom], height)
+        yrange = (y_positions[chrom] - (height*trackOffset) - (padding*trackOffset), height)
         xranges = group[['start', 'width']].values
         yield BrokenBarHCollection(
             xranges, yrange, facecolors=df['colors'], **kwargs)
@@ -868,11 +899,11 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     chrom_height = 1
     # Spacing between consecutive ideograms
     chrom_spacing = 1
-    # Height of the gene track. Should be smaller than `chrom_spacing` in order to
+    # Height of the gff feature track. Should be smaller than `chrom_spacing` in order to
     # fit correctly
-    gene_height = 0.4
+    gff_height = 0.2
     # Padding between the top of a gene track and its corresponding ideogram
-    gene_padding = 0.1
+    gff_padding = 0.05
     # Width, height (in inches)
     figsize = (6, 8)
     # Decide which chromosomes to use
@@ -898,14 +929,13 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     for chrom in chromosome_list[::-1]:
         chrom_ybase[chrom] = ybase
         chrom_centers[chrom] = ybase + chrom_height / 2.
-        gene_ybase[chrom] = ybase - gene_height - gene_padding
         ybase += chrom_height + chrom_spacing
 
     #Scaffold background
     scaffolds = pd.DataFrame(list(chromo_dict.iteritems()),columns=['chrom','end'])
     scaffolds['start'] = 0
     scaffolds['width'] = scaffolds.end - scaffolds.start
-    scaffolds['colors'] = '#eeeeee'
+    scaffolds['colors'] = "#5BBCD6"
 
     ##Run merge on anomaly intervals, makes bands clearer for 'window' based anomalies
     anomBED  = anomBED.merge(d=0)
@@ -914,51 +944,57 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     # Filter out chromosomes not in our list
     features = features[features.chrom.apply(lambda x: x in chromosome_list)]
     features['width'] = features.end - features.start
-    features['colors'] = '#ff6600'
+    features['colors'] = "#F2AD00"
 
     if showGfffeatures and args.gffIn and args.gffFeatures:
         if type(args.gffFeatures) is list:
-            gffType = args.gffFeatures[0]
+            gffType = args.gffFeatures[:3]
         else:
-            gffType = args.gffFeatures
+            gffType = list(args.gffFeatures)
 
-        filteredGff = list()
+        featureTables = list()
+        counter = 0
+        colorList = ["#F98400", "#00A08A", "#FF0000"] 
+        for label in gffType:
+            filteredGff = list()
+            with open(args.gffIn) as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith(">"):
+                        break
+                    if not line.startswith("#"):
+                        rec = line.split()
+                        reclist = gffFilter(rec, feature=label)
+                        if not reclist:
+                            continue
+                        recInterval = (str(reclist[0]),int(reclist[3]),int(reclist[4]))
+                        filteredGff.append(recInterval)
 
-        handle = open(args.gffIn)
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            if line.startswith(">"):
-                break
-            if not line.startswith("#"):
-                rec = line.split()
-                reclist = gffFilter(rec, feature=gffType)
-                if not reclist:
-                    continue
-                recInterval = (str(reclist[0]),int(reclist[3]),int(reclist[4]))
-                filteredGff.append(recInterval)
-
-        handle.close()
-
-        genes = pd.DataFrame.from_records(filteredGff, columns=['chrom', 'start', 'end'])
-        genes = genes[genes.chrom.apply(lambda x: x in chromosome_list)]
-        genes['width'] = genes.end - genes.start
-        genes['colors'] = '#2243a8'
+            featureSet = pd.DataFrame.from_records(filteredGff, columns=['chrom', 'start', 'end'])
+            featureSet = featureSet[featureSet.chrom.apply(lambda x: x in chromosome_list)]
+            featureSet['width'] = featureSet.end - featureSet.start
+            featureSet['colors'] = colorList[counter]
+            featureTables.append(featureSet)
+            counter += 1
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    for collection in chromosome_collections(scaffolds, chrom_ybase, chrom_height):
+    for collection in chromosome_collections(scaffolds, chrom_ybase, chrom_height, 0, 0, alpha=0.8):
         ax.add_collection(collection)
 
-    for collection in chromosome_collections(features, chrom_ybase, chrom_height):
+    for collection in chromosome_collections(features, chrom_ybase, chrom_height, 0, 0):
         ax.add_collection(collection)
 
     if showGfffeatures and args.gffIn and args.gffFeatures:
-        for collection in chromosome_collections(
-            genes, gene_ybase, gene_height, alpha=0.5, linewidths=0
-        ):
-            ax.add_collection(collection)
+        trackOffset = 1
+        for featureSet in featureTables:
+            for collection in chromosome_collections(
+                featureSet, chrom_ybase, gff_height, trackOffset, gff_padding, alpha=0.7, linewidths=0
+            ):
+                ax.add_collection(collection)
+                trackOffset += 1
 
     # Axes tweaking
     ax.set_yticks([chrom_centers[i] for i in chromosome_list])
@@ -1026,7 +1062,9 @@ def mainArgs():
                         type=str,
                         default=None,
                         nargs='+',
-                        help='Space delimited list of feature types to report from gff')
+                        help='Report anomaly intersection of these feature types from --gffIn. \
+                        Up to first three features will be printed in chromosome painting option. \
+                        Give as space delimited list.')
     parser.add_argument('--gffRange',
                         type=int,
                         default=0,
@@ -1575,11 +1613,11 @@ def main():
             sns.set_style("ticks")
             plt.title('Genome-wide Self Similarity Distribution')
             sns.set(color_codes=True)
-            ax = sns.distplot(logKLI, hist=True, bins=100, kde=False, rug=False, color="b")
+            ax = sns.distplot(logKLI, hist=True, bins=100, kde=False, rug=False, color="#00A08A")
             ax.set(xlabel='log10 Kullback-Leibler Divergence', ylabel='Genomic Window Count')
             sns.despine()
             if KLIthreshold:
-                plt.axvline(KLIthreshold, color='r', linestyle='dashed', linewidth=2)
+                plt.axvline(KLIthreshold, color="#FF0000", linestyle='dashed', linewidth=2)
             pdf.savefig() # saves the current figure into a pdf page
             plt.close()
 
@@ -1587,7 +1625,7 @@ def main():
             sns.set_style("ticks")
             plt.title('Genome-wide Self Similarity Distribution')
             sns.set(color_codes=True)
-            ax = sns.distplot(allKLI, hist=True, bins=optBins, kde=False, rug=False, color="b")
+            ax = sns.distplot(allKLI, hist=True, bins=optBins, kde=False, rug=False, color="#00A08A")
             ax.set(xlabel='Raw Kullback-Leibler Divergence', ylabel='Genomic Window Count')
             sns.despine()
             pdf.savefig()  
@@ -1601,15 +1639,13 @@ def main():
             
             #Compose Dim reduction scatterplot
             if args.runProjection:
-                makeScatter(Y, args, pca_X=pca_X, y_pred=y_pred)
-                pdf.savefig()
-                plt.close()
+                makeScatter(Y, args, pdf, labels=anomLabels, pca_X=pca_X, y_pred=y_pred)
                 
             if (args.RIP) and (args.minWordSize <= 2):
                 plt.figure()
                 plt.title('Composite RIP Index')
                 sns.set(color_codes=True)
-                ax = sns.distplot(CRI, hist=True, bins=100, kde=False, rug=False, color="b")
+                ax = sns.distplot(CRI, hist=True, bins=100, kde=False, rug=False, color="#00A08A")
                 ax.set(xlabel='Composite RIP Index', ylabel='Genomic Window Count')
                 sns.set_style("ticks")
                 sns.despine()
@@ -1619,7 +1655,7 @@ def main():
                 plt.figure()
                 plt.title('RIP Product Index')
                 sns.set(color_codes=True)
-                ax = sns.distplot(PI, hist=True, bins=100, kde=False, rug=False, color="b")
+                ax = sns.distplot(PI, hist=True, bins=100, kde=False, rug=False, color="#00A08A")
                 ax.set(xlabel='RIP Product Index', ylabel='Genomic Window Count')
                 sns.set_style("ticks")
                 sns.despine()
@@ -1629,7 +1665,7 @@ def main():
                 plt.figure()
                 plt.title('RIP Substrate Index')
                 sns.set(color_codes=True)
-                ax = sns.distplot(SI, hist=True, bins=100, kde=False, rug=False, color="b")
+                ax = sns.distplot(SI, hist=True, bins=100, kde=False, rug=False, color="#00A08A")
                 ax.set(xlabel='RIP Substrate Index', ylabel='Genomic Window Count')
                 sns.set_style("ticks")
                 sns.despine()
