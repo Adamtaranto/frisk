@@ -23,11 +23,10 @@ if __name__ == "__main__":
     import sys
     K=8
     winsz = 5000
-    n = 10000000
 
     r = screed.open(sys.argv[1])
     for x in r:
-        seq = x.sequence[:n]
+        seq = x.sequence
         break
 
     if path.exists('genome.npy'):
@@ -43,7 +42,7 @@ if __name__ == "__main__":
     klis = []
     print(len(seq))
     starts = range(0, len(seq) - winsz + 1, int(winsz/2))
-    if True:
+    if False:
         pool = mp.Pool()
         for window in pool.imap(do_window, starts):
             klis.append(window)
@@ -52,22 +51,17 @@ if __name__ == "__main__":
         klis = np.array([k for _, k in sorted(klis)])
     else:
         for start in starts:
-            print(start)
             winseq = seq[start:start+winsz]
-            c = Counter()
-            for base in winseq:
-                c[base]+=1
-            for  k, v in c.most_common():
-                print(k, v/len(winseq))
             iv = seq_ivom(winseq)
-            print(sum(iv), len(winseq))
             klis.append(kli(giv, iv))
-            print(klis[-1])
+            if len(klis) == 1:
+                print(repr(giv), giv.dtype, repr(iv), iv.dtype)
             if len(klis) % 100 == 0:
                 print("done", len(klis), "windows")
 
+    print(klis)
 
-    #np.save('window_klis.npy', klis)
+    np.save('window_klis.npy', klis)
 
     plt.plot(klis)
-    plt.savefig('frisk.pdf')
+    plt.savefig('gen.pdf')
