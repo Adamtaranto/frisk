@@ -576,11 +576,12 @@ def thresholdKLI(intervalList, threshold, args, threshCol='windowKLI', merge=Tru
     tItems[['start','stop']] = tItems.loc[:,('start','stop')].astype(int) #Note: Pandas wants to complain about chained assignments here. Ignore.
     tItems[['name','windowKLI']] = tItems.loc[:,('name','windowKLI')].astype(str)
     anomaliesBED  = pybedtools.BedTool([i for i in tItems.as_matrix(columns=['name','start','stop','windowKLI']).tolist()])
+    tItems[['windowKLI']] = tItems.loc[:,('windowKLI')].astype(float)
     if merge:
         anomalies = anomaliesBED.merge(d=args.mergeDist, c='4,4,4', o='max,min,mean')
     else:
         anomalies = anomaliesBED
-    return anomalies
+    return anomalies,tItems
 
 def setKLIThresh(args, logKLI):
     # Calc optimal bins for KLI data
@@ -753,7 +754,16 @@ def pcaAxisLabels(pca_X, kmin=1, kmax=6):
         idx += 1
     return axisLabels
 
-def makeScatter(Y,args,pdf,labels=None,pca_X=None,y_pred=None):
+def makeScatter_CRIKLD(df=None, ax=None):
+    clean_df = df.loc[~(np.isnan(df['CRI']) & ~(np.isnan(df['windowKLI'])))]
+    clean_df['log10windowKLI'] = np.log10(clean_df['windowKLI'])
+    sp = sns.regplot('log10windowKLI', 'CRI', data=clean_df, 
+                 x_ci='ci', ci=95, scatter=True, fit_reg=True,
+                 dropna=True, color="#5BBCD6", marker='o',
+                 line_kws={"color": "#F98400"}, ax=ax)
+    return sp
+
+def makeScatter(Y, args, pdf, labels=None, pca_X=None, y_pred=None):
     if not args.cluster:
         if pca_X:
             axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
@@ -829,7 +839,7 @@ def makeScatter(Y,args,pdf,labels=None,pca_X=None,y_pred=None):
         for i in y_class:
             X_class = Y_frame.loc[(Y_frame['Class'] == i)]
             sns.regplot(X_class[0], X_class[1], fit_reg=False, ax=ax1, 
-                        label=['Class_Label'][0], marker=markers[i], 
+                        label=X_class['Class_Label'][0], marker=markers[i], 
                         color=colors[i], scatter_kws={"s": 20})
         ax1.legend(loc='center left', bbox_to_anchor=(1, 0.5), borderaxespad=0.)
         sns.despine()
@@ -935,7 +945,7 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     scaffolds = pd.DataFrame(list(chromo_dict.iteritems()),columns=['chrom','end'])
     scaffolds['start'] = 0
     scaffolds['width'] = scaffolds.end - scaffolds.start
-    scaffolds['colors'] = "#5BBCD6"
+    scaffolds['colors'] = "#00A08A"
 
     ##Run merge on anomaly intervals, makes bands clearer for 'window' based anomalies
     anomBED  = anomBED.merge(d=0)
@@ -984,14 +994,14 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     for collection in chromosome_collections(scaffolds, chrom_ybase, chrom_height, 0, 0, alpha=0.8):
         ax.add_collection(collection)
 
-    for collection in chromosome_collections(features, chrom_ybase, chrom_height, 0, 0):
+    for collection in chromosome_collections(features, chrom_ybase, chrom_height, 0, 0, linewidths=0):
         ax.add_collection(collection)
 
     if showGfffeatures and args.gffIn and args.gffFeatures:
         trackOffset = 1
         for featureSet in featureTables:
             for collection in chromosome_collections(
-                featureSet, chrom_ybase, gff_height, trackOffset, gff_padding, alpha=0.7, linewidths=0
+                featureSet, chrom_ybase, gff_height, trackOffset, gff_padding, alpha=0.8, linewidths=0
             ):
                 ax.add_collection(collection)
                 trackOffset += 1
@@ -1296,6 +1306,7 @@ def main():
 
     # Read in query genome sequences as dict keyed by seq name
     selfGenome, nBlocks = getFasta(querySeq)
+
     ##########################################
     #########  Import or Calculate   #########
     #########   Genome kmer Counts   #########
@@ -1322,8 +1333,6 @@ def main():
     if os.path.isfile(windowsPickle) and args.recalcWin:
         logging.info('Importing previously calculated window KLI scores from: %s' % windowsPickle)
         allWindows = pickle.load(open(windowsPickle, "rb"))
-        #Note: Need check here to make sure that imported dataframe has RIP data if going to be used later
-        #Alt: put RIP status in the pickle name?
     else:
         # Initialise textfile output
         out     = args.outfile
@@ -1409,10 +1418,9 @@ def main():
         # Return hmmBED object and updates allWindow object which now includes 'hmmState' column
         hmmBED,allWindows	= hmm2BED(allWindows, model, dataCol='windowKLI')
         # Write hmm states as GFF3 outfile
-        handle = open(os.path.join(args.tempDir, args.hmmOutfile), "w")
-        for i in hmmBED2GFF(hmmBED):
-            handle.write(i)
-        handle.close()
+        with open(os.path.join(args.tempDir, args.hmmOutfile), "w") as handle:
+            for i in hmmBED2GFF(hmmBED):
+                handle.write(i)
 
     #################################
     #### Dimensionality reduction ###
@@ -1423,10 +1431,10 @@ def main():
     if args.runProjection:
         if args.dimReduce == 'features':
             # Merge anomalous windows to preform dimensionality reduction on feature stats
-            anomWin  = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=True)
+            anomWin,anomWin_df  = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=True)
         elif args.dimReduce == 'windows':
             # Anomalous windows by KLI threshold without merging
-            anomWin  = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=False)
+            anomWin,anomWin_df  = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=False)
         # Extract nucleotide sequences
         logging.info('Recovering %s sequences from anomalous windows.' % str(len(anomWin)))
         anomSeqs = getBEDSeq(selfGenome, anomWin) #generator object that yields (name,seq) tuples.
@@ -1522,7 +1530,7 @@ def main():
         anomalies = anomWin
         logging.info('Detected %s features above KLI threshold.' % str(len(anomalies)))
     elif KLIthreshold:
-        anomalies = thresholdKLI(allWindows,KLIthreshold,args,threshCol='windowKLI',merge=True)
+        anomalies,anomWin_df = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=True)
         logging.info('Detected %s features above KLI threshold.' % str(len(anomalies)))
 
     ##########################################
@@ -1542,18 +1550,20 @@ def main():
     # Write anomalies as GFF3 outfile
     # Note: Need to incorporate cluster identity if calculated.
     if args.gffOutfile:
-        handle  = open(os.path.join(args.tempDir, args.gffOutfile), "w")
-        for i in anomaly2GFF(anomalies,args): #Use category='Class_Label' to pass class
-            handle.write(i)
-        handle.close()
+        with open(os.path.join(args.tempDir, args.gffOutfile), "w") as handle:
+            for i in anomaly2GFF(anomalies,args): #Use category='Class_Label' to pass class
+                handle.write(i)
 
     if (args.RIP) and (args.minWordSize <= 2):
-        RIPbed	= thresholdRIP(allWindows, args) #name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
-        if RIPbed:
-            handle  = open(os.path.join(args.tempDir, args.RIPgff), "w")
-            for i in RIP2GFF(RIPbed):
-                handle.write(i)
-            handle.close()
+        if 'CRI' in allWindows.columns:
+            RIPbed	= thresholdRIP(allWindows, args) #name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
+            if RIPbed:
+                with open(os.path.join(args.tempDir, args.RIPgff), "w") as handle:
+                    for i in RIP2GFF(RIPbed):
+                        handle.write(i)
+        else:
+            logging.info('Window survey does not contain RIP data. Rerun with --recalcWin and --RIP options.')
+            sys.exit(1)
 
     # Find genes in anomalies if gff annotation file provided
     # Note: Separate output for each class, if runProjection and cluster are set
@@ -1610,10 +1620,9 @@ def main():
 
         with PdfPages(os.path.join(args.tempDir, args.graphics)) as pdf:
             plt.figure()
-            sns.set_style("ticks")
+            sns.set(color_codes=True, style="ticks")
             plt.title('Genome-wide Self Similarity Distribution')
-            sns.set(color_codes=True)
-            ax = sns.distplot(logKLI, hist=True, bins=100, kde=False, rug=False, color="#00A08A")
+            ax = sns.distplot(logKLI, hist=True, bins=100, kde=False, rug=False, color="#00A08A", hist_kws={"alpha": 1})
             ax.set(xlabel='log10 Kullback-Leibler Divergence', ylabel='Genomic Window Count')
             sns.despine()
             if KLIthreshold:
@@ -1622,10 +1631,9 @@ def main():
             plt.close()
 
             plt.figure()
-            sns.set_style("ticks")
+            sns.set(color_codes=True, style="ticks")
             plt.title('Genome-wide Self Similarity Distribution')
-            sns.set(color_codes=True)
-            ax = sns.distplot(allKLI, hist=True, bins=optBins, kde=False, rug=False, color="#00A08A")
+            ax = sns.distplot(allKLI, hist=True, bins=optBins, kde=False, rug=False, color="#00A08A", hist_kws={"alpha": 1})
             ax.set(xlabel='Raw Kullback-Leibler Divergence', ylabel='Genomic Window Count')
             sns.despine()
             pdf.savefig()  
@@ -1642,32 +1650,28 @@ def main():
                 makeScatter(Y, args, pdf, labels=anomLabels, pca_X=pca_X, y_pred=y_pred)
                 
             if (args.RIP) and (args.minWordSize <= 2):
-                plt.figure()
-                plt.title('Composite RIP Index')
-                sns.set(color_codes=True)
-                ax = sns.distplot(CRI, hist=True, bins=100, kde=False, rug=False, color="#00A08A")
-                ax.set(xlabel='Composite RIP Index', ylabel='Genomic Window Count')
-                sns.set_style("ticks")
-                sns.despine()
-                pdf.savefig()
-                plt.close()
+                fig, axarr = plt.subplots(2, 2)
+                sns.set(color_codes=True, style="ticks")
+                header = fig.suptitle("Summary RIP Statistics", fontsize="x-large")
 
-                plt.figure()
-                plt.title('RIP Product Index')
-                sns.set(color_codes=True)
-                ax = sns.distplot(PI, hist=True, bins=100, kde=False, rug=False, color="#00A08A")
-                ax.set(xlabel='RIP Product Index', ylabel='Genomic Window Count')
-                sns.set_style("ticks")
-                sns.despine()
-                pdf.savefig()
-                plt.close()
+                sns.distplot(CRI, hist=True, bins=100, kde=False, rug=False, color="#00A08A", ax=axarr[0, 0], hist_kws={"alpha": 1})
+                axarr[0, 0].axvline(args.minCRI, color="#FF0000", linestyle='dashed', linewidth=2)
+                axarr[0, 0].axvline(args.peakCRI, color="#F2AD00", linestyle='dashed', linewidth=2)
+                axarr[0, 0].set(xlabel='Composite RIP Index', ylabel='Genomic Window Count', title='Composite RIP Index')
 
-                plt.figure()
-                plt.title('RIP Substrate Index')
-                sns.set(color_codes=True)
-                ax = sns.distplot(SI, hist=True, bins=100, kde=False, rug=False, color="#00A08A")
-                ax.set(xlabel='RIP Substrate Index', ylabel='Genomic Window Count')
-                sns.set_style("ticks")
+                sns.distplot(PI, hist=True, bins=100, kde=False, rug=False, color="#00A08A", ax=axarr[0, 1], hist_kws={"alpha": 1})
+                axarr[0, 1].axvline(args.minPI, color="#FF0000", linestyle='dashed', linewidth=2)
+                axarr[0, 1].set(xlabel='RIP Product Index', ylabel='Genomic Window Count', title='RIP Product Index')
+
+                sns.distplot(SI, hist=True, bins=100, kde=False, rug=False, color="#00A08A", ax=axarr[1, 0], hist_kws={"alpha": 1})
+                axarr[1, 0].axvline(args.maxSI, color="#FF0000", linestyle='dashed', linewidth=2)
+                axarr[1, 0].set(xlabel='RIP Substrate Index', ylabel='Genomic Window Count', title='RIP Substrate Index')
+
+                sp = makeScatter_CRIKLD(df=anomWin_df, ax=axarr[1, 1])
+                axarr[1, 1].set(xlabel='log10(KLD)', ylabel='Composite RIP Index', title='CRI vs KLD in Anomalies')
+
+                header.set_y(0.95)
+                fig.subplots_adjust(top=0.85, hspace=0.5, wspace = 0.3)
                 sns.despine()
                 pdf.savefig()
                 plt.close()
