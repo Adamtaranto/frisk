@@ -50,6 +50,7 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import MDS
 from sklearn.manifold import TSNE
 from scipy import stats
+from scipy.stats import pearsonr
 import seaborn as sns
 import sys
 from . import tsne
@@ -757,10 +758,15 @@ def pcaAxisLabels(pca_X, kmin=1, kmax=6):
 def makeScatter_CRIKLD(df=None, ax=None):
     clean_df = df.loc[~(np.isnan(df['CRI']) & ~(np.isnan(df['windowKLI'])))]
     clean_df['log10windowKLI'] = np.log10(clean_df['windowKLI'])
+    pr,rpval = pearsonr(clean_df['log10windowKLI'], clean_df['CRI'])
+    r2 = pr ** 2
     sp = sns.regplot('log10windowKLI', 'CRI', data=clean_df, 
                  x_ci='ci', ci=95, scatter=True, fit_reg=True,
                  dropna=True, color="#5BBCD6", marker='o',
-                 line_kws={"color": "#F98400"}, ax=ax)
+                 line_kws={"color": "#F98400"}, scatter_kws={'alpha':0.8},
+                 ax=ax)
+    ax.annotate("R2 = {:.2f}".format(r2) + "; p = {:.2f}".format(rpval),
+                xy=(.65, .03), xycoords=ax.transAxes, fontsize='xx-small')
     return sp
 
 def makeScatter(Y, args, pdf, labels=None, pca_X=None, y_pred=None):
@@ -841,9 +847,9 @@ def makeScatter(Y, args, pdf, labels=None, pca_X=None, y_pred=None):
             X_class = X_class.reset_index(drop=True)
             sns.regplot(X_class[0], X_class[1], fit_reg=False, ax=ax1, 
                         label=X_class['Class_Label'][0], marker=markers[i], 
-                        color=colors[i], scatter_kws={"s": 20})
+                        color=colors[i], scatter_kws={"s": 20,'alpha':0.8})
         ax1.legend(loc='center left', bbox_to_anchor=(1, 0.5), borderaxespad=0.)
-        sns.despine()
+        sns.despine(fig=fig1)
 
         if pca_X:
             axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
@@ -877,7 +883,7 @@ def makeScatter(Y, args, pdf, labels=None, pca_X=None, y_pred=None):
         #pdf.savefig()
         #plt.close()
 
-def chromosome_collections(df, y_positions, height, trackOffset, padding, **kwargs):
+def chromosome_collections(df, y_positions, height, trackAdjust=0, padding= 0, trackMode=False , **kwargs):
     """
     Yields BrokenBarHCollection of features that can be added to an Axes
     object.
@@ -898,7 +904,10 @@ def chromosome_collections(df, y_positions, height, trackOffset, padding, **kwar
         del_width = True
         df['width'] = df['end'] - df['start']
     for chrom, group in df.groupby('chrom'):
-        yrange = (y_positions[chrom] - (height*trackOffset) - (padding*trackOffset), height)
+        if not trackMode:
+            yrange = (y_positions[chrom], height)
+        else:
+            yrange = (y_positions[chrom] - ((padding + height)*trackAdjust), height)
         xranges = group[['start', 'width']].values
         yield BrokenBarHCollection(
             xranges, yrange, facecolors=df['colors'], **kwargs)
@@ -962,13 +971,12 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
             gffType = args.gffFeatures[:3]
         else:
             gffType = list(args.gffFeatures)
-
         featureTables = list()
         counter = 0
         colorList = ["#F98400", "#00A08A", "#FF0000"] 
         for label in gffType:
             filteredGff = list()
-            with open(args.gffIn) as handle:
+            with open(args.gffIn,'rU') as handle:
                 for line in handle:
                     line = line.strip()
                     if not line:
@@ -982,7 +990,6 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
                             continue
                         recInterval = (str(reclist[0]),int(reclist[3]),int(reclist[4]))
                         filteredGff.append(recInterval)
-
             featureSet = pd.DataFrame.from_records(filteredGff, columns=['chrom', 'start', 'end'])
             featureSet = featureSet[featureSet.chrom.apply(lambda x: x in chromosome_list)]
             featureSet['width'] = featureSet.end - featureSet.start
@@ -991,27 +998,29 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
             counter += 1
 
     fig = plt.figure()
-    ax = fig.add_subplot(111)
-    for collection in chromosome_collections(scaffolds, chrom_ybase, chrom_height, 0, 0, alpha=0.8):
+    ax  = fig.add_subplot(111)
+    for collection in chromosome_collections(scaffolds, chrom_ybase, chrom_height, alpha=0.8):
         ax.add_collection(collection)
 
-    for collection in chromosome_collections(features, chrom_ybase, chrom_height, 0, 0, linewidths=0):
+    for collection in chromosome_collections(features, chrom_ybase, chrom_height, linewidths=0):
         ax.add_collection(collection)
 
     if showGfffeatures and args.gffIn and args.gffFeatures:
         trackOffset = 1
         for featureSet in featureTables:
             for collection in chromosome_collections(
-                featureSet, chrom_ybase, gff_height, trackOffset, gff_padding, alpha=0.8, linewidths=0
+                featureSet, chrom_ybase, gff_height, trackAdjust = trackOffset, padding = gff_padding, trackMode=True, alpha=0.8, linewidths=0
             ):
                 ax.add_collection(collection)
-                trackOffset += 1
+            trackOffset += 1
 
     # Axes tweaking
     ax.set_yticks([chrom_centers[i] for i in chromosome_list])
     ax.set_yticklabels(chromosome_list)
     ax.get_xaxis().set_major_formatter(FuncFormatter(lambda x, p: format(int(x), ',')))
     ax.axis('tight')
+    #fig.subplots_adjust(top=0.90)
+    sns.despine(fig=fig)
 
 def mainArgs():
     """Process command-line arguments"""
@@ -1568,23 +1577,19 @@ def main():
 
     # Find genes in anomalies if gff annotation file provided
     # Note: Separate output for each class, if runProjection and cluster are set
-    if args.gffIn:
-
+    if args.gffIn and args.gffFeatures:
         if args.threshTypeKLI or args.forceThresholdKLI:
             # Change default name to be query centric, ok.
             gffOutname			= os.path.join(args.tempDir, "featuresIn_thresholded_Anomalies_" + os.path.basename(args.gffIn))
             features			= pybedtools.BedTool(args.gffIn).each(gffFilter, feature=args.gffFeatures)
             extractedFeatures 	= features.window(b=anomalies, w=args.gffRange, u=True)
-
             if len(extractedFeatures) > 0:
                 extractedFeatures.saveas(gffOutname)
                 logging.info('Successfully extracted %s features from within %sbp of anomaly annotations.' % (str(len(extractedFeatures)), str(args.gffRange)))
-
             else:
                 logging.info('No features from %s detected within %s bases of anomalies.' % (args.gffIn, str(args.gffRange)))
 
         if args.hmmKLI:
-
             # State1 and State2 live here
             hmmOutputFile = os.path.join(args.tempDir, args.hmmOutfile)
 
