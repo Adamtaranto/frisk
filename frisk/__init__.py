@@ -838,6 +838,7 @@ def makeScatter(Y, args, pdf, labels=None, pca_X=None, y_pred=None):
         ax1.set_position([box.x0, box.y0, box.width * 0.8, box.height])
         for i in y_class:
             X_class = Y_frame.loc[(Y_frame['Class'] == i)]
+            X_class = X_class.reset_index(drop=True)
             sns.regplot(X_class[0], X_class[1], fit_reg=False, ax=ax1, 
                         label=X_class['Class_Label'][0], marker=markers[i], 
                         color=colors[i], scatter_kws={"s": 20})
@@ -1446,7 +1447,7 @@ def main():
         pcaBlankMap = rangeMaps(args.pcaMin, args.pcaMax)
 
         for name, target in anomSeqs:
-            logging.info('Computing kmers in %s.' % str(name))
+            logging.info('Computing kmers in %s' % str(name))
             # Symetrical counting of kmers
             countMap 	= computeKmers(args,genomepickle=None, window=[(name, target)], 
                                             genomeMode=False, pcaMode=True, kmerMap=pcaBlankMap, 
