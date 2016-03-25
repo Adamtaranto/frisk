@@ -50,6 +50,7 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import MDS
 from sklearn.manifold import TSNE
 from scipy import stats
+from scipy.stats import pearsonr
 import seaborn as sns
 import sys
 from . import tsne
@@ -545,6 +546,14 @@ def anomaly2GFF(anomBED, args, **kwargs):
         yield '\t'.join(content) + '\n'
         n += 1
 
+def anomClust2gff(df):
+    n = 1
+    yield '##gff-version 3' + '\n'
+    for index, row in df.iterrows():
+        content = [row['chrom'], 'frisk_' + FRISK_VERSION, row['Class_Label'], row['start'], row['end'], '.', '+', '.', ';'.join(['ID=Clustered_Anom_' + str(n).zfill(len(str(len(df))))])]
+        yield '\t'.join(content) + '\n'
+        n += 1
+
 def RIP2GFF(ripBED):
     # name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
     n = 1
@@ -566,6 +575,55 @@ def hmmBED2GFF(hmmBED):
         yield outstring
         n += 1
 
+def cluster2df(Y, labels=None, y_pred=None):
+    colors = np.array([x for x in 'bgrcmykbgrcmykbgrcmykbgrcmyk'])
+    colors = np.hstack([colors] * 20)
+    markers = np.array([x for x in '+o^8s^Do+o^8s^Do+o^8s^Do+o^8s^Do*'])
+    markers = np.hstack([markers] * 20)
+
+    # List of dbscan classes
+    y_class = np.unique(y_pred)
+
+    # List to hold generated class names
+    names_class = np.unique(y_pred).tolist()
+    count_class = 0
+    for i in range(0, len(names_class)):
+        count_class += 1
+        if names_class[i] == -1:
+            names_class[i] = 'Unclassified'
+        else:
+            names_class[i] = 'Class_' + str(i)
+
+    # Split labels out into list by chrom,start,end
+    chromSet = list()
+    startSet = list()
+    endSet   = list()
+    labelsSet = [x[0].astype(str) for x in labels]
+    chromSet = [x.split(":")[0] for x in labelsSet]
+    startSet = [x.split(":")[1] for x in labelsSet]
+    endSet = [x.split(":")[2] for x in labelsSet]
+
+    # Generate scatterplots for each class using pca coords
+    Y_frame = pd.DataFrame(Y)
+    Y_frame['Class']  = y_pred
+    Y_frame['chrom']  = chromSet
+    Y_frame['start']  = startSet
+    Y_frame['end']    = endSet
+    # In itialise columns
+    Y_frame['Class_Label'] = np.NaN
+    Y_frame['colors'] = np.NaN
+    Y_frame['markers'] = np.NaN
+    
+    # Append class labels
+    for i in y_class:
+        Y_slice = Y_frame.loc[(Y_frame['Class'] == i)]
+        Y_slice['Class_Label'] = names_class[np.where(y_class ==i)[0][0]]
+        Y_slice['colors'] =  colors[i]
+        Y_slice['markers'] = markers[i]
+        # Replace edited slice into dataframe
+        Y_frame.loc[Y_slice.index.values] = Y_slice  
+    return Y_frame
+
 def thresholdKLI(intervalList, threshold, args, threshCol='windowKLI', merge=True):
     intervalList = intervalList.loc[~(np.isnan(intervalList['windowKLI']))].sort_values(
         ['name','start','stop'],ascending=[1,1,1],na_position='last')
@@ -576,11 +634,12 @@ def thresholdKLI(intervalList, threshold, args, threshCol='windowKLI', merge=Tru
     tItems[['start','stop']] = tItems.loc[:,('start','stop')].astype(int) #Note: Pandas wants to complain about chained assignments here. Ignore.
     tItems[['name','windowKLI']] = tItems.loc[:,('name','windowKLI')].astype(str)
     anomaliesBED  = pybedtools.BedTool([i for i in tItems.as_matrix(columns=['name','start','stop','windowKLI']).tolist()])
+    tItems[['windowKLI']] = tItems.loc[:,('windowKLI')].astype(float)
     if merge:
         anomalies = anomaliesBED.merge(d=args.mergeDist, c='4,4,4', o='max,min,mean')
     else:
         anomalies = anomaliesBED
-    return anomalies
+    return anomalies,tItems
 
 def setKLIThresh(args, logKLI):
     # Calc optimal bins for KLI data
@@ -753,25 +812,42 @@ def pcaAxisLabels(pca_X, kmin=1, kmax=6):
         idx += 1
     return axisLabels
 
-def makeScatter(Y,args,pca_X=None,y_pred=None):
-    #sns.set_style("ticks")
-    #sns.despine()
+def makeScatter_CRIKLD(df=None, ax=None):
+    clean_df = df.loc[~(np.isnan(df['CRI']) & ~(np.isnan(df['windowKLI'])))]
+    clean_df['log10windowKLI'] = np.log10(clean_df['windowKLI'])
+    pr,rpval = pearsonr(clean_df['log10windowKLI'], clean_df['CRI'])
+    r2 = pr ** 2
+    sp = sns.regplot('log10windowKLI', 'CRI', data=clean_df, 
+                 x_ci='ci', ci=95, scatter=True, fit_reg=True,
+                 dropna=True, color="#5BBCD6", marker='o',
+                 line_kws={"color": "#F98400"}, scatter_kws={'alpha':0.8},
+                 ax=ax)
+    ax.annotate("R2 = {:.2f}".format(r2) + "; p = {:.2f}".format(rpval),
+                xy=(.65, .03), xycoords=ax.transAxes, fontsize='xx-small')
+    return sp
+
+def makeScatter(Y, args, pdf, pca_X=None, y_pred=None):
     if not args.cluster:
         if pca_X:
             axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
-            plt.figure()
+            fig1, ax1 = plt.subplots()
             sns.set_style("ticks")
-            plt.title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
-            ax = sns.regplot(x=Y[:, 0], y=Y[:, 1], color='blue', fit_reg=False, scatter_kws={'alpha':0.4,"s": 20})
-            ax.set(xlabel=axisLabels[0], ylabel=axisLabels[1])
+            ax1.set_title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
+            sns.regplot(x=Y[:, 0], y=Y[:, 1], ax=ax1, color='blue', fit_reg=False, scatter_kws={'alpha':0.4,"s": 20})
+            ax1.set(xlabel=axisLabels[0], ylabel=axisLabels[1])
             sns.despine()
+            pdf.savefig()
+            plt.close(fig1)
         elif args.runProjection in ('PY-TSNE','SKL-TSNE','IncrementalPCA', 'NMF', 'MDS'):
-            plt.figure()
+            fig1, ax1 = plt.subplots()
             sns.set_style("ticks")
-            plt.title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
-            plt.xlabel('X')
-            plt.ylabel('Y')
-            sns.regplot(x=Y[:, 0], y=Y[:, 1], color='blue', fit_reg=False, scatter_kws={'alpha':0.4,"s": 20})
+            ax1.set_title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
+            ax1.set_xlabel('X')
+            ax1.set_ylabel('Y')
+            sns.regplot(x=Y[:, 0], y=Y[:, 1], ax=ax1, color='blue', fit_reg=False, scatter_kws={'alpha':0.4,"s": 20})
+            sns.despine()
+            pdf.savefig()
+            plt.close(fig1)
 
     elif args.cluster:
         colors = np.array([x for x in 'bgrcmykbgrcmykbgrcmykbgrcmyk'])
@@ -803,39 +879,64 @@ def makeScatter(Y,args,pca_X=None,y_pred=None):
         for i in y_class:
             Y_slice = Y_frame.loc[(Y_frame['Class'] == i)]
             Y_slice['Class_Label'] = names_class[np.where(y_class ==i)[0][0]]
+            #Add colours column
             Y_frame.loc[Y_slice.index.values] = Y_slice
 
-        #Make palettes for facetGrid
-        #pal   = dict()
-        #mar_order   = list()
-        #name_order = list()
-        #for i in y_class:
-        #    pal[names_class[np.where(y_class ==i)[0][0]]] = colors[i]
-        #    mar_order = markers[i]
-        #    name_order.append(names_class[np.where(y_class == i)[0][0]])
+        #Make palettes for data aware grids
+        pal   = dict()
+        mar_order   = list()
+        name_order = list()
+        for i in y_class:
+            pal[names_class[np.where(y_class ==i)[0][0]]] = colors[i]
+            mar_order = markers[i]
+            name_order.append(names_class[np.where(y_class == i)[0][0]])
 
         sns.set(color_codes=True, style='ticks')
-        fig, ax = plt.subplots()
-        box = ax.get_position()
-        ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+        fig1, ax1 = plt.subplots()
+        box = ax1.get_position()
+        ax1.set_position([box.x0, box.y0, box.width * 0.8, box.height])
         for i in y_class:
             X_class = Y_frame.loc[(Y_frame['Class'] == i)]
-            sns.regplot(X_class[0], X_class[1], fit_reg=False, ax=ax, 
-                        label=['Class_Label'][0], marker=markers[i], 
-                        color=colors[i], scatter_kws={"s": 20})
-        ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), borderaxespad=0.)
-        sns.despine()
+            X_class = X_class.reset_index(drop=True)
+            sns.regplot(X_class[0], X_class[1], fit_reg=False, ax=ax1, 
+                        label=X_class['Class_Label'][0], marker=markers[i], 
+                        color=colors[i], scatter_kws={"s": 20,'alpha':0.8})
+        ax1.legend(loc='center left', bbox_to_anchor=(1, 0.5), borderaxespad=0.)
+        sns.despine(fig=fig1)
 
         if pca_X:
             axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
-            plt.title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
-            plt.xlabel(axisLabels[0])
-            plt.ylabel(axisLabels[1])
+            ax1.set_title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
+            ax1.set_xlabel(axisLabels[0])
+            ax1.set_ylabel(axisLabels[1])
 
         elif args.runProjection in ('PY-TSNE','SKL-TSNE', 'IncrementalPCA', 'NMF', 'MDS'):
-            plt.title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
+            ax1.set_title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
 
-def chromosome_collections(df, y_positions, height,  **kwargs):
+        pdf.savefig()
+        plt.close(fig1)
+
+        #Experimental: Pairplot to display all pairwise PCA
+        #sns.plt.switch_backend('TkAgg')
+        #plt.switch_backend('cairo')
+        #fig = plt.figure()
+        #rc={'backend': 'cairo'}
+        #sns.set_context(rc=rc)
+        #g = sns.pairplot(Y_frame,
+        #            hue='Class_Label',
+        #            hue_order=name_order,
+        #            palette=pal,
+        #            vars=range(args.projectionDims),
+        #            kind='scatter',
+        #            diag_kind='hist',
+        #            markers=mar_order,
+        #            size=2.5,
+        #            aspect=1,
+        #            dropna=True)
+        #pdf.savefig()
+        #plt.close()
+
+def chromosome_collections(df, y_positions, height, trackAdjust=0, padding= 0, trackMode=False , **kwargs):
     """
     Yields BrokenBarHCollection of features that can be added to an Axes
     object.
@@ -856,7 +957,10 @@ def chromosome_collections(df, y_positions, height,  **kwargs):
         del_width = True
         df['width'] = df['end'] - df['start']
     for chrom, group in df.groupby('chrom'):
-        yrange = (y_positions[chrom], height)
+        if not trackMode:
+            yrange = (y_positions[chrom], height)
+        else:
+            yrange = (y_positions[chrom] - ((padding + height)*trackAdjust), height)
         xranges = group[['start', 'width']].values
         yield BrokenBarHCollection(
             xranges, yrange, facecolors=df['colors'], **kwargs)
@@ -868,11 +972,11 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     chrom_height = 1
     # Spacing between consecutive ideograms
     chrom_spacing = 1
-    # Height of the gene track. Should be smaller than `chrom_spacing` in order to
+    # Height of the gff feature track. Should be smaller than `chrom_spacing` in order to
     # fit correctly
-    gene_height = 0.4
+    gff_height = 0.2
     # Padding between the top of a gene track and its corresponding ideogram
-    gene_padding = 0.1
+    gff_padding = 0.05
     # Width, height (in inches)
     figsize = (6, 8)
     # Decide which chromosomes to use
@@ -898,14 +1002,13 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     for chrom in chromosome_list[::-1]:
         chrom_ybase[chrom] = ybase
         chrom_centers[chrom] = ybase + chrom_height / 2.
-        gene_ybase[chrom] = ybase - gene_height - gene_padding
         ybase += chrom_height + chrom_spacing
 
     #Scaffold background
     scaffolds = pd.DataFrame(list(chromo_dict.iteritems()),columns=['chrom','end'])
     scaffolds['start'] = 0
     scaffolds['width'] = scaffolds.end - scaffolds.start
-    scaffolds['colors'] = '#eeeeee'
+    scaffolds['colors'] = "#00A08A"
 
     ##Run merge on anomaly intervals, makes bands clearer for 'window' based anomalies
     anomBED  = anomBED.merge(d=0)
@@ -914,57 +1017,63 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     # Filter out chromosomes not in our list
     features = features[features.chrom.apply(lambda x: x in chromosome_list)]
     features['width'] = features.end - features.start
-    features['colors'] = '#ff6600'
+    features['colors'] = "#F2AD00"
 
     if showGfffeatures and args.gffIn and args.gffFeatures:
         if type(args.gffFeatures) is list:
-            gffType = args.gffFeatures[0]
+            gffType = args.gffFeatures[:3]
         else:
-            gffType = args.gffFeatures
-
-        filteredGff = list()
-
-        handle = open(args.gffIn)
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            if line.startswith(">"):
-                break
-            if not line.startswith("#"):
-                rec = line.split()
-                reclist = gffFilter(rec, feature=gffType)
-                if not reclist:
-                    continue
-                recInterval = (str(reclist[0]),int(reclist[3]),int(reclist[4]))
-                filteredGff.append(recInterval)
-
-        handle.close()
-
-        genes = pd.DataFrame.from_records(filteredGff, columns=['chrom', 'start', 'end'])
-        genes = genes[genes.chrom.apply(lambda x: x in chromosome_list)]
-        genes['width'] = genes.end - genes.start
-        genes['colors'] = '#2243a8'
+            gffType = list(args.gffFeatures)
+        featureTables = list()
+        counter = 0
+        colorList = ["#F98400", "#00A08A", "#FF0000"] 
+        for label in gffType:
+            filteredGff = list()
+            with open(args.gffIn,'rU') as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith(">"):
+                        break
+                    if not line.startswith("#"):
+                        rec = line.split()
+                        reclist = gffFilter(rec, feature=label)
+                        if not reclist:
+                            continue
+                        recInterval = (str(reclist[0]),int(reclist[3]),int(reclist[4]))
+                        filteredGff.append(recInterval)
+            featureSet = pd.DataFrame.from_records(filteredGff, columns=['chrom', 'start', 'end'])
+            featureSet = featureSet[featureSet.chrom.apply(lambda x: x in chromosome_list)]
+            featureSet['width'] = featureSet.end - featureSet.start
+            featureSet['colors'] = colorList[counter]
+            featureTables.append(featureSet)
+            counter += 1
 
     fig = plt.figure()
-    ax = fig.add_subplot(111)
-    for collection in chromosome_collections(scaffolds, chrom_ybase, chrom_height):
+    ax  = fig.add_subplot(111)
+    for collection in chromosome_collections(scaffolds, chrom_ybase, chrom_height, alpha=0.8):
         ax.add_collection(collection)
 
-    for collection in chromosome_collections(features, chrom_ybase, chrom_height):
+    for collection in chromosome_collections(features, chrom_ybase, chrom_height, linewidths=0):
         ax.add_collection(collection)
 
     if showGfffeatures and args.gffIn and args.gffFeatures:
-        for collection in chromosome_collections(
-            genes, gene_ybase, gene_height, alpha=0.5, linewidths=0
-        ):
-            ax.add_collection(collection)
+        trackOffset = 1
+        for featureSet in featureTables:
+            for collection in chromosome_collections(
+                featureSet, chrom_ybase, gff_height, trackAdjust = trackOffset, padding = gff_padding, trackMode=True, alpha=0.8, linewidths=0
+            ):
+                ax.add_collection(collection)
+            trackOffset += 1
 
     # Axes tweaking
     ax.set_yticks([chrom_centers[i] for i in chromosome_list])
     ax.set_yticklabels(chromosome_list)
     ax.get_xaxis().set_major_formatter(FuncFormatter(lambda x, p: format(int(x), ',')))
     ax.axis('tight')
+    #fig.subplots_adjust(top=0.90)
+    sns.despine(fig=fig)
 
 def mainArgs():
     """Process command-line arguments"""
@@ -1026,7 +1135,9 @@ def mainArgs():
                         type=str,
                         default=None,
                         nargs='+',
-                        help='Space delimited list of feature types to report from gff')
+                        help='Report anomaly intersection of these feature types from --gffIn. \
+                        Up to first three features will be printed in chromosome painting option. \
+                        Give as space delimited list.')
     parser.add_argument('--gffRange',
                         type=int,
                         default=0,
@@ -1258,6 +1369,7 @@ def main():
 
     # Read in query genome sequences as dict keyed by seq name
     selfGenome, nBlocks = getFasta(querySeq)
+
     ##########################################
     #########  Import or Calculate   #########
     #########   Genome kmer Counts   #########
@@ -1284,8 +1396,6 @@ def main():
     if os.path.isfile(windowsPickle) and args.recalcWin:
         logging.info('Importing previously calculated window KLI scores from: %s' % windowsPickle)
         allWindows = pickle.load(open(windowsPickle, "rb"))
-        #Note: Need check here to make sure that imported dataframe has RIP data if going to be used later
-        #Alt: put RIP status in the pickle name?
     else:
         # Initialise textfile output
         out     = args.outfile
@@ -1371,10 +1481,9 @@ def main():
         # Return hmmBED object and updates allWindow object which now includes 'hmmState' column
         hmmBED,allWindows	= hmm2BED(allWindows, model, dataCol='windowKLI')
         # Write hmm states as GFF3 outfile
-        handle = open(os.path.join(args.tempDir, args.hmmOutfile), "w")
-        for i in hmmBED2GFF(hmmBED):
-            handle.write(i)
-        handle.close()
+        with open(os.path.join(args.tempDir, args.hmmOutfile), "w") as handle:
+            for i in hmmBED2GFF(hmmBED):
+                handle.write(i)
 
     #################################
     #### Dimensionality reduction ###
@@ -1385,10 +1494,10 @@ def main():
     if args.runProjection:
         if args.dimReduce == 'features':
             # Merge anomalous windows to preform dimensionality reduction on feature stats
-            anomWin  = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=True)
+            anomWin,anomWin_df  = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=True)
         elif args.dimReduce == 'windows':
             # Anomalous windows by KLI threshold without merging
-            anomWin  = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=False)
+            anomWin,anomWin_df  = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=False)
         # Extract nucleotide sequences
         logging.info('Recovering %s sequences from anomalous windows.' % str(len(anomWin)))
         anomSeqs = getBEDSeq(selfGenome, anomWin) #generator object that yields (name,seq) tuples.
@@ -1400,7 +1509,7 @@ def main():
         pcaBlankMap = rangeMaps(args.pcaMin, args.pcaMax)
 
         for name, target in anomSeqs:
-            logging.info('Computing kmers in %s.' % str(name))
+            logging.info('Computing kmers in %s' % str(name))
             # Symetrical counting of kmers
             countMap 	= computeKmers(args,genomepickle=None, window=[(name, target)], 
                                             genomeMode=False, pcaMode=True, kmerMap=pcaBlankMap, 
@@ -1484,7 +1593,7 @@ def main():
         anomalies = anomWin
         logging.info('Detected %s features above KLI threshold.' % str(len(anomalies)))
     elif KLIthreshold:
-        anomalies = thresholdKLI(allWindows,KLIthreshold,args,threshCol='windowKLI',merge=True)
+        anomalies,anomWin_df = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=True)
         logging.info('Detected %s features above KLI threshold.' % str(len(anomalies)))
 
     ##########################################
@@ -1504,38 +1613,41 @@ def main():
     # Write anomalies as GFF3 outfile
     # Note: Need to incorporate cluster identity if calculated.
     if args.gffOutfile:
-        handle  = open(os.path.join(args.tempDir, args.gffOutfile), "w")
-        for i in anomaly2GFF(anomalies,args): #Use category='Class_Label' to pass class
-            handle.write(i)
-        handle.close()
+        with open(os.path.join(args.tempDir, args.gffOutfile), "w") as handle:
+                for i in anomaly2GFF(anomalies,args):
+                    handle.write(i)
+        if args.cluster:
+            with open(os.path.join(args.tempDir, 'cluster_labeled_features_' + args.gffOutfile), "w") as handle:
+                clusteredAnoms = cluster2df(Y, labels=anomLabels, y_pred=y_pred)
+                for i in anomClust2gff(clusteredAnoms):
+                    handle.write(i)
 
     if (args.RIP) and (args.minWordSize <= 2):
-        RIPbed	= thresholdRIP(allWindows, args) #name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
-        if RIPbed:
-            handle  = open(os.path.join(args.tempDir, args.RIPgff), "w")
-            for i in RIP2GFF(RIPbed):
-                handle.write(i)
-            handle.close()
+        if 'CRI' in allWindows.columns:
+            RIPbed	= thresholdRIP(allWindows, args) #name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
+            if RIPbed:
+                with open(os.path.join(args.tempDir, args.RIPgff), "w") as handle:
+                    for i in RIP2GFF(RIPbed):
+                        handle.write(i)
+        else:
+            logging.info('Window survey does not contain RIP data. Rerun with --recalcWin and --RIP options.')
+            sys.exit(1)
 
     # Find genes in anomalies if gff annotation file provided
     # Note: Separate output for each class, if runProjection and cluster are set
-    if args.gffIn:
-
+    if args.gffIn and args.gffFeatures:
         if args.threshTypeKLI or args.forceThresholdKLI:
             # Change default name to be query centric, ok.
             gffOutname			= os.path.join(args.tempDir, "featuresIn_thresholded_Anomalies_" + os.path.basename(args.gffIn))
             features			= pybedtools.BedTool(args.gffIn).each(gffFilter, feature=args.gffFeatures)
             extractedFeatures 	= features.window(b=anomalies, w=args.gffRange, u=True)
-
             if len(extractedFeatures) > 0:
                 extractedFeatures.saveas(gffOutname)
                 logging.info('Successfully extracted %s features from within %sbp of anomaly annotations.' % (str(len(extractedFeatures)), str(args.gffRange)))
-
             else:
                 logging.info('No features from %s detected within %s bases of anomalies.' % (args.gffIn, str(args.gffRange)))
 
         if args.hmmKLI:
-
             # State1 and State2 live here
             hmmOutputFile = os.path.join(args.tempDir, args.hmmOutfile)
 
@@ -1572,22 +1684,20 @@ def main():
 
         with PdfPages(os.path.join(args.tempDir, args.graphics)) as pdf:
             plt.figure()
-            sns.set_style("ticks")
+            sns.set(color_codes=True, style="ticks")
             plt.title('Genome-wide Self Similarity Distribution')
-            sns.set(color_codes=True)
-            ax = sns.distplot(logKLI, hist=True, bins=100, kde=False, rug=False, color="b")
+            ax = sns.distplot(logKLI, hist=True, bins=100, kde=False, rug=False, color="#00A08A", hist_kws={"alpha": 1})
             ax.set(xlabel='log10 Kullback-Leibler Divergence', ylabel='Genomic Window Count')
             sns.despine()
             if KLIthreshold:
-                plt.axvline(KLIthreshold, color='r', linestyle='dashed', linewidth=2)
+                plt.axvline(KLIthreshold, color="#FF0000", linestyle='dashed', linewidth=2)
             pdf.savefig() # saves the current figure into a pdf page
             plt.close()
 
             plt.figure()
-            sns.set_style("ticks")
+            sns.set(color_codes=True, style="ticks")
             plt.title('Genome-wide Self Similarity Distribution')
-            sns.set(color_codes=True)
-            ax = sns.distplot(allKLI, hist=True, bins=optBins, kde=False, rug=False, color="b")
+            ax = sns.distplot(allKLI, hist=True, bins=optBins, kde=False, rug=False, color="#00A08A", hist_kws={"alpha": 1})
             ax.set(xlabel='Raw Kullback-Leibler Divergence', ylabel='Genomic Window Count')
             sns.despine()
             pdf.savefig()  
@@ -1601,37 +1711,31 @@ def main():
             
             #Compose Dim reduction scatterplot
             if args.runProjection:
-                makeScatter(Y, args, pca_X=pca_X, y_pred=y_pred)
-                pdf.savefig()
-                plt.close()
+                makeScatter(Y, args, pdf, pca_X=pca_X, y_pred=y_pred)
                 
             if (args.RIP) and (args.minWordSize <= 2):
-                plt.figure()
-                plt.title('Composite RIP Index')
-                sns.set(color_codes=True)
-                ax = sns.distplot(CRI, hist=True, bins=100, kde=False, rug=False, color="b")
-                ax.set(xlabel='Composite RIP Index', ylabel='Genomic Window Count')
-                sns.set_style("ticks")
-                sns.despine()
-                pdf.savefig()
-                plt.close()
+                fig, axarr = plt.subplots(2, 2)
+                sns.set(color_codes=True, style="ticks")
+                header = fig.suptitle("Summary RIP Statistics", fontsize="x-large")
 
-                plt.figure()
-                plt.title('RIP Product Index')
-                sns.set(color_codes=True)
-                ax = sns.distplot(PI, hist=True, bins=100, kde=False, rug=False, color="b")
-                ax.set(xlabel='RIP Product Index', ylabel='Genomic Window Count')
-                sns.set_style("ticks")
-                sns.despine()
-                pdf.savefig()
-                plt.close()
+                sns.distplot(CRI, hist=True, bins=100, kde=False, rug=False, color="#00A08A", ax=axarr[0, 0], hist_kws={"alpha": 1})
+                axarr[0, 0].axvline(args.minCRI, color="#FF0000", linestyle='dashed', linewidth=2)
+                axarr[0, 0].axvline(args.peakCRI, color="#F2AD00", linestyle='dashed', linewidth=2)
+                axarr[0, 0].set(xlabel='Composite RIP Index', ylabel='Genomic Window Count', title='Composite RIP Index')
 
-                plt.figure()
-                plt.title('RIP Substrate Index')
-                sns.set(color_codes=True)
-                ax = sns.distplot(SI, hist=True, bins=100, kde=False, rug=False, color="b")
-                ax.set(xlabel='RIP Substrate Index', ylabel='Genomic Window Count')
-                sns.set_style("ticks")
+                sns.distplot(PI, hist=True, bins=100, kde=False, rug=False, color="#00A08A", ax=axarr[0, 1], hist_kws={"alpha": 1})
+                axarr[0, 1].axvline(args.minPI, color="#FF0000", linestyle='dashed', linewidth=2)
+                axarr[0, 1].set(xlabel='RIP Product Index', ylabel='Genomic Window Count', title='RIP Product Index')
+
+                sns.distplot(SI, hist=True, bins=100, kde=False, rug=False, color="#00A08A", ax=axarr[1, 0], hist_kws={"alpha": 1})
+                axarr[1, 0].axvline(args.maxSI, color="#FF0000", linestyle='dashed', linewidth=2)
+                axarr[1, 0].set(xlabel='RIP Substrate Index', ylabel='Genomic Window Count', title='RIP Substrate Index')
+
+                sp = makeScatter_CRIKLD(df=anomWin_df, ax=axarr[1, 1])
+                axarr[1, 1].set(xlabel='log10(KLD)', ylabel='Composite RIP Index', title='CRI vs KLD in Anomalies')
+
+                header.set_y(0.95)
+                fig.subplots_adjust(top=0.85, hspace=0.5, wspace = 0.3)
                 sns.despine()
                 pdf.savefig()
                 plt.close()
