@@ -546,6 +546,14 @@ def anomaly2GFF(anomBED, args, **kwargs):
         yield '\t'.join(content) + '\n'
         n += 1
 
+def anomClust2gff(df):
+    n = 1
+    yield '##gff-version 3' + '\n'
+    for index, row in df.iterrows():
+        content = [row['chrom'], 'frisk_' + FRISK_VERSION, row['Class_Label'], row['start'], row['end'], '.', '+', '.', ';'.join(['ID=Clustered_Anom_' + str(n).zfill(len(str(len(df))))])]
+        yield '\t'.join(content) + '\n'
+        n += 1
+
 def RIP2GFF(ripBED):
     # name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
     n = 1
@@ -566,6 +574,55 @@ def hmmBED2GFF(hmmBED):
             yield '##gff-version 3' + '\n'
         yield outstring
         n += 1
+
+def cluster2df(Y, labels=None, y_pred=None):
+    colors = np.array([x for x in 'bgrcmykbgrcmykbgrcmykbgrcmyk'])
+    colors = np.hstack([colors] * 20)
+    markers = np.array([x for x in '+o^8s^Do+o^8s^Do+o^8s^Do+o^8s^Do*'])
+    markers = np.hstack([markers] * 20)
+
+    # List of dbscan classes
+    y_class = np.unique(y_pred)
+
+    # List to hold generated class names
+    names_class = np.unique(y_pred).tolist()
+    count_class = 0
+    for i in range(0, len(names_class)):
+        count_class += 1
+        if names_class[i] == -1:
+            names_class[i] = 'Unclassified'
+        else:
+            names_class[i] = 'Class_' + str(i)
+
+    # Split labels out into list by chrom,start,end
+    chromSet = list()
+    startSet = list()
+    endSet   = list()
+    labelsSet = [x[0].astype(str) for x in labels]
+    chromSet = [x.split(":")[0] for x in labelsSet]
+    startSet = [x.split(":")[1] for x in labelsSet]
+    endSet = [x.split(":")[2] for x in labelsSet]
+
+    # Generate scatterplots for each class using pca coords
+    Y_frame = pd.DataFrame(Y)
+    Y_frame['Class']  = y_pred
+    Y_frame['chrom']  = chromSet
+    Y_frame['start']  = startSet
+    Y_frame['end']    = endSet
+    # In itialise columns
+    Y_frame['Class_Label'] = np.NaN
+    Y_frame['colors'] = np.NaN
+    Y_frame['markers'] = np.NaN
+    
+    # Append class labels
+    for i in y_class:
+        Y_slice = Y_frame.loc[(Y_frame['Class'] == i)]
+        Y_slice['Class_Label'] = names_class[np.where(y_class ==i)[0][0]]
+        Y_slice['colors'] =  colors[i]
+        Y_slice['markers'] = markers[i]
+        # Replace edited slice into dataframe
+        Y_frame.loc[Y_slice.index.values] = Y_slice  
+    return Y_frame
 
 def thresholdKLI(intervalList, threshold, args, threshCol='windowKLI', merge=True):
     intervalList = intervalList.loc[~(np.isnan(intervalList['windowKLI']))].sort_values(
@@ -769,7 +826,7 @@ def makeScatter_CRIKLD(df=None, ax=None):
                 xy=(.65, .03), xycoords=ax.transAxes, fontsize='xx-small')
     return sp
 
-def makeScatter(Y, args, pdf, labels=None, pca_X=None, y_pred=None):
+def makeScatter(Y, args, pdf, pca_X=None, y_pred=None):
     if not args.cluster:
         if pca_X:
             axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
@@ -824,10 +881,6 @@ def makeScatter(Y, args, pdf, labels=None, pca_X=None, y_pred=None):
             Y_slice['Class_Label'] = names_class[np.where(y_class ==i)[0][0]]
             #Add colours column
             Y_frame.loc[Y_slice.index.values] = Y_slice
-
-        #Split labels
-
-        #Join labels to Y_frame 'chrom' 'start' 'end' 'colors'
 
         #Make palettes for data aware grids
         pal   = dict()
@@ -1561,8 +1614,13 @@ def main():
     # Note: Need to incorporate cluster identity if calculated.
     if args.gffOutfile:
         with open(os.path.join(args.tempDir, args.gffOutfile), "w") as handle:
-            for i in anomaly2GFF(anomalies,args): #Use category='Class_Label' to pass class
-                handle.write(i)
+                for i in anomaly2GFF(anomalies,args):
+                    handle.write(i)
+        if args.cluster:
+            with open(os.path.join(args.tempDir, 'cluster_labeled_features_' + args.gffOutfile), "w") as handle:
+                clusteredAnoms = cluster2df(Y, labels=anomLabels, y_pred=y_pred)
+                for i in anomClust2gff(clusteredAnoms):
+                    handle.write(i)
 
     if (args.RIP) and (args.minWordSize <= 2):
         if 'CRI' in allWindows.columns:
@@ -1653,7 +1711,7 @@ def main():
             
             #Compose Dim reduction scatterplot
             if args.runProjection:
-                makeScatter(Y, args, pdf, labels=anomLabels, pca_X=pca_X, y_pred=y_pred)
+                makeScatter(Y, args, pdf, pca_X=pca_X, y_pred=y_pred)
                 
             if (args.RIP) and (args.minWordSize <= 2):
                 fig, axarr = plt.subplots(2, 2)
