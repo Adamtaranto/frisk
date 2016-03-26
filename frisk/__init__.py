@@ -116,6 +116,25 @@ def countN(sequence):
     # return tuple with readable base count and non-ATGC base count
     return (count, countN)
 
+def calcGC(sequence):
+    """Calc proportion of GC/AT in non-N portion of sequence string"""
+    G_C = ('G', 'C')
+    A_T = ('A', 'T')
+    count_GC    = 0
+    count_AT    = 0
+    count_N     = 0
+    baseTally   = Counter()
+    baseTally += Counter(sequence)
+    for i in baseTally:
+        if i not in LETTERS:
+            count_N  += baseTally[i]
+        elif i in G_C:
+            count_GC += baseTally[i]
+        elif i in A_T:
+            count_AT += baseTally[i]
+    propGC = float(count_GC) / (count_GC + count_AT)
+    return propGC
+
 def iterFasta(path):
     """Iterates over the sequences of a fasta file"""
     logging.info("Loading fasta files from %s" % path)
@@ -812,12 +831,12 @@ def pcaAxisLabels(pca_X, kmin=1, kmax=6):
         idx += 1
     return axisLabels
 
-def makeScatter_CRIKLD(df=None, ax=None):
-    clean_df = df.loc[~(np.isnan(df['CRI']) & ~(np.isnan(df['windowKLI'])))]
+def makeScatter_X_logKLD(df=None, Xcol=None ,ax=None):
+    clean_df = df.loc[~(np.isnan(df[Xcol]) & ~(np.isnan(df['windowKLI'])))]
     clean_df['log10windowKLI'] = np.log10(clean_df['windowKLI'])
-    pr,rpval = pearsonr(clean_df['log10windowKLI'], clean_df['CRI'])
+    pr,rpval = pearsonr(clean_df['log10windowKLI'], clean_df[Xcol])
     r2 = pr ** 2
-    sp = sns.regplot('log10windowKLI', 'CRI', data=clean_df, 
+    sp = sns.regplot('log10windowKLI', Xcol, data=clean_df, 
                  x_ci='ci', ci=95, scatter=True, fit_reg=True,
                  dropna=True, color="#5BBCD6", marker='o',
                  line_kws={"color": "#F98400"}, scatter_kws={'alpha':0.8},
@@ -1107,6 +1126,7 @@ def mainArgs():
     parser.add_argument('-O',
                         '--outfile',
                         type=str,
+                        default='raw_window_scores.bed',
                         help='Write KLI-IVOM bed track to this file')
     parser.add_argument('-t',
                         '--tempDir',
@@ -1404,9 +1424,9 @@ def main():
 
         # Pandas dataframe to store KLI and RIP stats by window
         if (args.RIP) and (args.minWordSize <= 2):
-            columns = ['name', 'start', 'stop', 'windowKLI', 'PI', 'SI', 'CRI']
+            columns = ['name', 'start', 'stop', 'windowKLI', 'GC', 'PI', 'SI', 'CRI']
         else:
-            columns = ['name', 'start', 'stop', 'windowKLI']
+            columns = ['name', 'start', 'stop', 'windowKLI', 'GC']
 
         allWindows = pd.DataFrame(columns=columns)
 
@@ -1420,13 +1440,14 @@ def main():
             GenomeIVOM  	= IvomBuild(windowKmers, args, genomeKmers, True)
             windowIVOM  	= IvomBuild(windowKmers, args, genomeKmers, False)
             windowKLI		= KLI(GenomeIVOM, windowIVOM, args)
+            windowGC        = calcGC(seq)
             if (args.RIP) and (args.minWordSize <= 2):
                 PI, SI, CRI 	= calcRIP(windowKmers,args)
-                outString	= [name, str(start), str(stop), str(windowKLI), str(PI), str(SI), str(CRI)]
-                allWindows.loc[len(allWindows)]=[name, start, stop, windowKLI, PI, SI, CRI]
+                outString	= [name, str(start), str(stop), str(windowKLI), str(windowGC), str(PI), str(SI), str(CRI)]
+                allWindows.loc[len(allWindows)]=[name, start, stop, windowKLI, windowGC, PI, SI, CRI]
             else:
-                outString	= [name, str(start), str(stop), str(windowKLI)]
-                allWindows.loc[len(allWindows)]=[name, start, stop, windowKLI] #Mind that KLI does not get stored as scientific notation
+                outString	= [name, str(start), str(stop), str(windowKLI), str(windowGC)]
+                allWindows.loc[len(allWindows)]=[name, start, stop, windowKLI, windowGC] #Mind that KLI does not get stored as scientific notation
 
             handle.write('\t'.join(outString) + '\n')
             print('\t'.join(outString))
@@ -1708,7 +1729,19 @@ def main():
             plt.title('Chromosome painting: Anomalies on Query scaffolds')
             pdf.savefig(transparent=True)
             plt.close()
-            
+
+            #Make GC scatterplot
+            fig, ax = plt.subplots()
+            header = fig.suptitle("GC vs KLD in Anomalies", fontsize="x-large")
+            sns.set(color_codes=True, style="ticks")
+            gc_scatter = makeScatter_X_logKLD(df=anomWin_df, Xcol='GC', ax=ax)
+            ax.set(xlabel='log10(KLD)', ylabel='GC content')
+            header.set_y(0.95)
+            fig.subplots_adjust(top=0.85, hspace=0.5)
+            sns.despine()
+            pdf.savefig()
+            plt.close()
+
             #Compose Dim reduction scatterplot
             if args.runProjection:
                 makeScatter(Y, args, pdf, pca_X=pca_X, y_pred=y_pred)
@@ -1731,7 +1764,7 @@ def main():
                 axarr[1, 0].axvline(args.maxSI, color="#FF0000", linestyle='dashed', linewidth=2)
                 axarr[1, 0].set(xlabel='RIP Substrate Index', ylabel='Genomic Window Count', title='RIP Substrate Index')
 
-                sp = makeScatter_CRIKLD(df=anomWin_df, ax=axarr[1, 1])
+                sp = makeScatter_X_logKLD(df=anomWin_df, Xcol='CRI', ax=axarr[1, 1])
                 axarr[1, 1].set(xlabel='log10(KLD)', ylabel='Composite RIP Index', title='CRI vs KLD in Anomalies')
 
                 header.set_y(0.95)
