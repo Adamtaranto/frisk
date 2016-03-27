@@ -849,21 +849,25 @@ def makeScatter(Y, args, pdf, pca_X=None, y_pred=None):
     if not args.cluster:
         if pca_X:
             axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
+            sns.set(color_codes=True, style="ticks")
             fig1, ax1 = plt.subplots()
-            sns.set_style("ticks")
-            ax1.set_title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
-            sns.regplot(x=Y[:, 0], y=Y[:, 1], ax=ax1, color='blue', fit_reg=False, scatter_kws={'alpha':0.4,"s": 20})
+            header = fig1.suptitle(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
+            sns.regplot(x=Y[:, 0], y=Y[:, 1], ax=ax1, color="#5BBCD6", fit_reg=False, scatter_kws={'alpha':0.6,"s": 20})
             ax1.set(xlabel=axisLabels[0], ylabel=axisLabels[1])
+            header.set_y(0.95)
+            fig1.subplots_adjust(top=0.85)
             sns.despine()
             pdf.savefig()
             plt.close(fig1)
         elif args.runProjection in ('PY-TSNE','SKL-TSNE','IncrementalPCA', 'NMF', 'MDS'):
+            sns.set(color_codes=True, style="ticks")
             fig1, ax1 = plt.subplots()
-            sns.set_style("ticks")
-            ax1.set_title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
+            header = fig1.suptitle(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
             ax1.set_xlabel('X')
             ax1.set_ylabel('Y')
-            sns.regplot(x=Y[:, 0], y=Y[:, 1], ax=ax1, color='blue', fit_reg=False, scatter_kws={'alpha':0.4,"s": 20})
+            sns.regplot(x=Y[:, 0], y=Y[:, 1], ax=ax1, color="#5BBCD6", fit_reg=False, scatter_kws={'alpha':0.6,"s": 20})
+            header.set_y(0.95)
+            fig1.subplots_adjust(top=0.85)
             sns.despine()
             pdf.savefig()
             plt.close(fig1)
@@ -912,6 +916,7 @@ def makeScatter(Y, args, pdf, pca_X=None, y_pred=None):
 
         sns.set(color_codes=True, style='ticks')
         fig1, ax1 = plt.subplots()
+        header = fig1.suptitle(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts', fontsize="x-large")
         box = ax1.get_position()
         ax1.set_position([box.x0, box.y0, box.width * 0.8, box.height])
         for i in y_class:
@@ -922,15 +927,16 @@ def makeScatter(Y, args, pdf, pca_X=None, y_pred=None):
                         color=colors[i], scatter_kws={"s": 20,'alpha':0.8})
         ax1.legend(loc='center left', bbox_to_anchor=(1, 0.5), borderaxespad=0.)
         sns.despine(fig=fig1)
+        header.set_y(0.95)
+        fig1.subplots_adjust(top=0.85)
 
         if pca_X:
             axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
-            ax1.set_title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
             ax1.set_xlabel(axisLabels[0])
             ax1.set_ylabel(axisLabels[1])
 
-        elif args.runProjection in ('PY-TSNE','SKL-TSNE', 'IncrementalPCA', 'NMF', 'MDS'):
-            ax1.set_title(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
+        #elif args.runProjection in ('PY-TSNE','SKL-TSNE', 'IncrementalPCA', 'NMF', 'MDS'):
+            # Do something
 
         pdf.savefig()
         plt.close(fig1)
@@ -1027,7 +1033,7 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     scaffolds = pd.DataFrame(list(chromo_dict.iteritems()),columns=['chrom','end'])
     scaffolds['start'] = 0
     scaffolds['width'] = scaffolds.end - scaffolds.start
-    scaffolds['colors'] = "#00A08A"
+    scaffolds['colors'] = "#5BBCD6" #blue
 
     ##Run merge on anomaly intervals, makes bands clearer for 'window' based anomalies
     anomBED  = anomBED.merge(d=0)
@@ -1036,7 +1042,7 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     # Filter out chromosomes not in our list
     features = features[features.chrom.apply(lambda x: x in chromosome_list)]
     features['width'] = features.end - features.start
-    features['colors'] = "#F2AD00"
+    features['colors'] = "#F2AD00" #yellow-orange
 
     if showGfffeatures and args.gffIn and args.gffFeatures:
         if type(args.gffFeatures) is list:
@@ -1045,7 +1051,7 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
             gffType = list(args.gffFeatures)
         featureTables = list()
         counter = 0
-        colorList = ["#F98400", "#00A08A", "#FF0000"] 
+        colorList = ["#00A08A", "#FF0000", "#F98400"] # "#FF0000" red, "#00A08A" green , "#F2AD00" yellow, "#F98400" orange, "#5BBCD6" blue
         for label in gffType:
             filteredGff = list()
             with open(args.gffIn,'rU') as handle:
@@ -1062,6 +1068,8 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
                             continue
                         recInterval = (str(reclist[0]),int(reclist[3]),int(reclist[4]))
                         filteredGff.append(recInterval)
+            if not filteredGff:
+                continue
             featureSet = pd.DataFrame.from_records(filteredGff, columns=['chrom', 'start', 'end'])
             featureSet = featureSet[featureSet.chrom.apply(lambda x: x in chromosome_list)]
             featureSet['width'] = featureSet.end - featureSet.start
@@ -1069,21 +1077,21 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
             featureTables.append(featureSet)
             counter += 1
 
-    fig = plt.figure()
-    ax  = fig.add_subplot(111)
-    for collection in chromosome_collections(scaffolds, chrom_ybase, chrom_height, alpha=0.8):
+    fig, ax = plt.subplots()
+    header = fig.suptitle('Chromosome painting: Anomalies on Query scaffolds', fontsize="x-large")
+    # Add chromosome base
+    for collection in chromosome_collections(scaffolds, chrom_ybase, chrom_height, linewidths=0, alpha=0.2):
         ax.add_collection(collection)
-
+    # Add annomaly bands
     for collection in chromosome_collections(features, chrom_ybase, chrom_height, linewidths=0):
         ax.add_collection(collection)
-
+    # Add gff feature tracks
     if showGfffeatures and args.gffIn and args.gffFeatures:
         trackOffset = 1
         for featureSet in featureTables:
             for collection in chromosome_collections(
-                featureSet, chrom_ybase, gff_height, trackAdjust = trackOffset, padding = gff_padding, trackMode=True, alpha=0.8, linewidths=0
-            ):
-                ax.add_collection(collection)
+                featureSet, chrom_ybase, gff_height, trackAdjust = trackOffset, padding = gff_padding, trackMode=True, alpha=0.8, linewidths=0):
+                    ax.add_collection(collection)
             trackOffset += 1
 
     # Axes tweaking
@@ -1091,7 +1099,8 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     ax.set_yticklabels(chromosome_list)
     ax.get_xaxis().set_major_formatter(FuncFormatter(lambda x, p: format(int(x), ',')))
     ax.axis('tight')
-    #fig.subplots_adjust(top=0.90)
+    header.set_y(0.95)
+    fig.subplots_adjust(top=0.85)
     sns.despine(fig=fig)
 
 def mainArgs():
@@ -1658,7 +1667,6 @@ def main():
     # Note: Separate output for each class, if runProjection and cluster are set
     if args.gffIn and args.gffFeatures:
         if args.threshTypeKLI or args.forceThresholdKLI:
-            # Change default name to be query centric, ok.
             gffOutname			= os.path.join(args.tempDir, "featuresIn_thresholded_Anomalies_" + os.path.basename(args.gffIn))
             features			= pybedtools.BedTool(args.gffIn).each(gffFilter, feature=args.gffFeatures)
             extractedFeatures 	= features.window(b=anomalies, w=args.gffRange, u=True)
@@ -1671,7 +1679,6 @@ def main():
         if args.hmmKLI:
             # State1 and State2 live here
             hmmOutputFile = os.path.join(args.tempDir, args.hmmOutfile)
-
             gffOutname1			= os.path.join(args.tempDir, "featuresIn_hmm_State1_" + os.path.basename(args.gffIn))
             bedState1			= pybedtools.BedTool(hmmOutputFile).each(gffFilter, feature='State1')
             features1			= pybedtools.BedTool(args.gffIn).each(gffFilter, feature=args.gffFeatures)
@@ -1704,21 +1711,25 @@ def main():
         logging.info('Writing graphics to %s' % args.graphics)
 
         with PdfPages(os.path.join(args.tempDir, args.graphics)) as pdf:
-            plt.figure()
             sns.set(color_codes=True, style="ticks")
-            plt.title('Genome-wide Self Similarity Distribution')
-            ax = sns.distplot(logKLI, hist=True, bins=100, kde=False, rug=False, color="#00A08A", hist_kws={"alpha": 1})
+            fig, ax = plt.subplots()
+            header = fig.suptitle('Genome-wide Self Similarity Distribution', fontsize="x-large")
+            header.set_y(0.95)
+            fig.subplots_adjust(top=0.85)
+            sns.distplot(logKLI, hist=True, bins=100, kde=False, rug=False, color="#00A08A", hist_kws={"alpha": 1}, ax=ax)
             ax.set(xlabel='log10 Kullback-Leibler Divergence', ylabel='Genomic Window Count')
             sns.despine()
             if KLIthreshold:
-                plt.axvline(KLIthreshold, color="#FF0000", linestyle='dashed', linewidth=2)
+                ax.axvline(KLIthreshold, color="#FF0000", linestyle='dashed', linewidth=2)
             pdf.savefig() # saves the current figure into a pdf page
             plt.close()
 
-            plt.figure()
             sns.set(color_codes=True, style="ticks")
-            plt.title('Genome-wide Self Similarity Distribution')
-            ax = sns.distplot(allKLI, hist=True, bins=optBins, kde=False, rug=False, color="#00A08A", hist_kws={"alpha": 1})
+            fig, ax = plt.subplots()
+            header = fig.suptitle('Genome-wide Self Similarity Distribution', fontsize="x-large")
+            header.set_y(0.95)
+            fig.subplots_adjust(top=0.85)
+            sns.distplot(allKLI, hist=True, bins=optBins, kde=False, rug=False, color="#00A08A", hist_kws={"alpha": 1}, ax=ax)
             ax.set(xlabel='Raw Kullback-Leibler Divergence', ylabel='Genomic Window Count')
             sns.despine()
             pdf.savefig()  
@@ -1726,14 +1737,13 @@ def main():
 
             #Make chromosome painting
             makeChrPainting(selfGenome, args, anomalies, showGfffeatures=True)
-            plt.title('Chromosome painting: Anomalies on Query scaffolds')
             pdf.savefig(transparent=True)
             plt.close()
 
             #Make GC scatterplot
+            sns.set(color_codes=True, style="ticks")
             fig, ax = plt.subplots()
             header = fig.suptitle("GC vs KLD in Anomalies", fontsize="x-large")
-            sns.set(color_codes=True, style="ticks")
             gc_scatter = makeScatter_X_logKLD(df=anomWin_df, Xcol='GC', ax=ax)
             ax.set(xlabel='log10(KLD)', ylabel='GC content')
             header.set_y(0.95)
@@ -1747,8 +1757,8 @@ def main():
                 makeScatter(Y, args, pdf, pca_X=pca_X, y_pred=y_pred)
                 
             if (args.RIP) and (args.minWordSize <= 2):
-                fig, axarr = plt.subplots(2, 2)
                 sns.set(color_codes=True, style="ticks")
+                fig, axarr = plt.subplots(2, 2)
                 header = fig.suptitle("Summary RIP Statistics", fontsize="x-large")
 
                 sns.distplot(CRI, hist=True, bins=100, kde=False, rug=False, color="#00A08A", ax=axarr[0, 0], hist_kws={"alpha": 1})
