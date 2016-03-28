@@ -54,6 +54,7 @@ setup(
     name="frisk",
     packages=['frisk', ],
     version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
     install_requires=install_requires,
     tests_require=test_requires,
     description=desc,
