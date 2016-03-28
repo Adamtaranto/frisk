@@ -993,7 +993,7 @@ def chromosome_collections(df, y_positions, height, trackAdjust=0, padding= 0, t
     if del_width:
         del df['width']
 
-def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
+def makeChrPainting(selfGenome, anomBED, chrmlist=None, gffIn=None, gffFeatures=None, title='Missing title', showGfffeatures=False):
     # Height of each ideogram
     chrom_height = 1
     # Spacing between consecutive ideograms
@@ -1008,10 +1008,10 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     # Decide which chromosomes to use
     chromosome_list = natural_sort(selfGenome.keys())
     chromosome_list = [str(i) for i in chromosome_list]
-    if args.chrmlist:
-        common_chrms    = [i for i in set(chromosome_list).intersection(args.chrmlist)]
+    if chrmlist:
+        common_chrms    = [i for i in set(chromosome_list).intersection(chrmlist)]
         chromosome_list = natural_sort(common_chrms)
-    #Get chr lengths
+    # Get chr lengths
     chromo_dict = dict()
     for chr in chromosome_list:
         chromo_dict[chr] = len(selfGenome[chr])
@@ -1030,32 +1030,33 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
         chrom_centers[chrom] = ybase + chrom_height / 2.
         ybase += chrom_height + chrom_spacing
 
-    #Scaffold background
+    # Scaffold background
     scaffolds = pd.DataFrame(list(chromo_dict.iteritems()),columns=['chrom','end'])
     scaffolds['start'] = 0
     scaffolds['width'] = scaffolds.end - scaffolds.start
     scaffolds['colors'] = "#5BBCD6" #blue
 
-    ##Run merge on anomaly intervals, makes bands clearer for 'window' based anomalies
+    # Run merge on anomaly intervals, makes bands clearer for 'window' based anomalies
     anomBED  = anomBED.merge(d=0)
-    ##Read in anomalies
-    features = pd.read_table(anomBED.fn, names=['chrom', 'start', 'end'],usecols=range(3))
+    # Read in anomalies
+    features = pd.read_table(anomBED.fn, names=['chrom', 'start', 'end'], usecols=range(3))
     # Filter out chromosomes not in our list
     features = features[features.chrom.apply(lambda x: x in chromosome_list)]
     features['width'] = features.end - features.start
     features['colors'] = "#F2AD00" #yellow-orange
 
-    if showGfffeatures and args.gffIn and args.gffFeatures:
-        if type(args.gffFeatures) is list:
-            gffType = args.gffFeatures[:3]
+    if showGfffeatures and gffIn and gffFeatures:
+        if type(gffFeatures) is list:
+            gffType = gffFeatures[:3]
         else:
-            gffType = list(args.gffFeatures)
+            gffType = list()
+            gffType.append(gffFeatures)
         featureTables = list()
         counter = 0
         colorList = ["#00A08A", "#FF0000", "#F98400"] # "#FF0000" red, "#00A08A" green , "#F2AD00" yellow, "#F98400" orange, "#5BBCD6" blue
         for label in gffType:
             filteredGff = list()
-            with open(args.gffIn,'rU') as handle:
+            with open(gffIn,'rU') as handle:
                 for line in handle:
                     line = line.strip()
                     if not line:
@@ -1079,7 +1080,7 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
             counter += 1
 
     fig, ax = plt.subplots()
-    header = fig.suptitle('Chromosome painting: Anomalies on Query scaffolds', fontsize="x-large")
+    header = fig.suptitle(title, fontsize="x-large")
     # Add chromosome base
     for collection in chromosome_collections(scaffolds, chrom_ybase, chrom_height, linewidths=0, alpha=0.2):
         ax.add_collection(collection)
@@ -1087,7 +1088,7 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     for collection in chromosome_collections(features, chrom_ybase, chrom_height, linewidths=0):
         ax.add_collection(collection)
     # Add gff feature tracks
-    if showGfffeatures and args.gffIn and args.gffFeatures:
+    if showGfffeatures and gffIn and gffFeatures:
         trackOffset = 1
         for featureSet in featureTables:
             for collection in chromosome_collections(
@@ -1339,7 +1340,7 @@ def mainArgs():
                         type=int,
                         default=2,
                         help='Set number of clusters for k-means or spectral clustering methods.')
-    #Graphics options
+    # Graphics options
     parser.add_argument('--chrmlist',
                         default=None,
                         nargs='+',
@@ -1750,7 +1751,10 @@ def main():
             plt.close()
 
             #Make chromosome painting
-            makeChrPainting(selfGenome, args, anomalies, showGfffeatures=True)
+            chrTitle = 'Chromosome painting: Anomalies on Query scaffolds'
+            makeChrPainting(selfGenome, anomalies, chrmlist=args.chrmlist, gffIn=args.gffIn, 
+                            gffFeatures=args.gffFeatures, title=chrTitle, 
+                            showGfffeatures=True)
             pdf.savefig(transparent=True)
             plt.close()
 
@@ -1771,6 +1775,14 @@ def main():
                 makeScatter(Y, args, pdf, pca_X=pca_X, y_pred=y_pred, centroids=k_cluster_centers)
                 
             if (args.RIP) and (args.minWordSize <= 2):
+                chrTitle = 'Chromosome painting: Anomalies with RIP annotation track'
+                makeChrPainting(selfGenome, anomalies, chrmlist=args.chrmlist, gffIn=os.path.join(args.tempDir, args.RIPgff), 
+                                gffFeatures='RIP', title=chrTitle, 
+                                showGfffeatures=True)
+                pdf.savefig(transparent=True)
+                plt.close()
+
+                # RIP summary graphics
                 sns.set(color_codes=True, style="ticks")
                 fig, axarr = plt.subplots(2, 2)
                 header = fig.suptitle("Summary RIP Statistics", fontsize="x-large")
@@ -1799,10 +1811,10 @@ def main():
 
             # Set the file's metadata via the PdfPages object:
             d = pdf.infodict()
-            d['Title'] = 'Frisk: KLI Distribution Summary'
-            d['Author'] = 'frisk --' + FRISK_VERSION
+            d['Title'] = 'Frisk: IVOM-KLD Distribution Summary'
+            d['Author'] = 'frisk--' + FRISK_VERSION
             d['Subject'] = 'Summary graphics'
-            d['Keywords'] = 'histogram'
+            d['Keywords'] = 'kmer'
             d['CreationDate'] = datetime.datetime.today()
             d['ModDate'] = datetime.datetime.today()
 
