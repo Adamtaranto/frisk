@@ -44,6 +44,7 @@ import pickle
 import pybedtools
 import re
 from sklearn.cluster import DBSCAN
+from sklearn.cluster import KMeans
 from sklearn.decomposition import IncrementalPCA
 from sklearn.decomposition import NMF
 from sklearn.decomposition import PCA
@@ -600,7 +601,7 @@ def cluster2df(Y, labels=None, y_pred=None):
     markers = np.array([x for x in '+o^8s^Do+o^8s^Do+o^8s^Do+o^8s^Do*'])
     markers = np.hstack([markers] * 20)
 
-    # List of dbscan classes
+    # List of clustering classes
     y_class = np.unique(y_pred)
 
     # List to hold generated class names
@@ -845,7 +846,7 @@ def makeScatter_X_logKLD(df=None, Xcol=None ,ax=None):
                 xy=(.65, .03), xycoords=ax.transAxes, fontsize='xx-small')
     return sp
 
-def makeScatter(Y, args, pdf, pca_X=None, y_pred=None):
+def makeScatter(Y, args, pdf, pca_X=None, y_pred=None, centroids=None):
     if not args.cluster:
         if pca_X:
             axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
@@ -878,7 +879,7 @@ def makeScatter(Y, args, pdf, pca_X=None, y_pred=None):
         markers = np.array([x for x in '+o^8s^Do+o^8s^Do+o^8s^Do+o^8s^Do*'])
         markers = np.hstack([markers] * 20)
 
-        # List of dbscan classes
+        # List of clustering classes
         y_class = np.unique(y_pred)
         # List to hold scatterplots for each class
         scatter_class = np.unique(y_pred).tolist()
@@ -917,18 +918,17 @@ def makeScatter(Y, args, pdf, pca_X=None, y_pred=None):
         sns.set(color_codes=True, style='ticks')
         fig1, ax1 = plt.subplots()
         header = fig1.suptitle(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts', fontsize="x-large")
-        box = ax1.get_position()
-        ax1.set_position([box.x0, box.y0, box.width * 0.8, box.height])
         for i in y_class:
             X_class = Y_frame.loc[(Y_frame['Class'] == i)]
             X_class = X_class.reset_index(drop=True)
             sns.regplot(X_class[0], X_class[1], fit_reg=False, ax=ax1, 
                         label=X_class['Class_Label'][0], marker=markers[i], 
                         color=colors[i], scatter_kws={"s": 20,'alpha':0.8})
-        ax1.legend(loc='center left', bbox_to_anchor=(1, 0.5), borderaxespad=0.)
+        box = ax1.get_position()
+        ax1.set_position([box.x0, box.y0, box.width * 0.85, box.height * 0.95])
+        lgd = ax1.legend(loc='center left', bbox_to_anchor=(1, 0.5), borderaxespad=0.1, prop={'size':10})
         sns.despine(fig=fig1)
         header.set_y(0.95)
-        fig1.subplots_adjust(top=0.85)
 
         if pca_X:
             axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
@@ -938,7 +938,7 @@ def makeScatter(Y, args, pdf, pca_X=None, y_pred=None):
         #elif args.runProjection in ('PY-TSNE','SKL-TSNE', 'IncrementalPCA', 'NMF', 'MDS'):
             # Do something
 
-        pdf.savefig()
+        pdf.savefig(fig1)
         plt.close(fig1)
 
         #Experimental: Pairplot to display all pairwise PCA
@@ -1292,7 +1292,7 @@ def mainArgs():
                         help='Run dimensionality reduction on all anomalous features, or on merged features.')
     parser.add_argument('--cluster',
                         default=None,
-                        choices=[None, 'DBSCAN'], #Note: Add support for kmeans later
+                        choices=[None, 'DBSCAN', 'KMEANS'],
                         help='Attempt clustering on projection.')
     parser.add_argument('--dumpPCAdata',
                         action='store_true',
@@ -1334,6 +1334,10 @@ def mainArgs():
                         default=10,
                         help='Set eps value for DBSCAN, will attempt to cluster points < "eps" distance apart. \
                         Note: Typically smaller for PCA (0.01 - 3.0), than for t-SNE (5-20).')
+    parser.add_argument('--kClusters',
+                        type=int,
+                        default=2,
+                        help='Set number of clusters for k-means clustering.')
     #Graphics options
     parser.add_argument('--chrmlist',
                         default=None,
@@ -1609,6 +1613,18 @@ def main():
                 y_pred = dbscan.predict(Y)
             # Note: Add Cluster column
             # Append cluster label to anomWin dataframe
+        elif args.cluster == 'KMEANS':
+            kmeansClust = KMeans(n_clusters=args.kClusters, init='k-means++', n_init=20, max_iter=500, 
+                                tol=0.0001, precompute_distances='auto', verbose=0, 
+                                random_state=None, copy_x=True, n_jobs=1).fit(Y)
+            if hasattr(kmeansClust, 'labels_'):
+                y_pred = kmeansClust.labels_.astype(np.int)
+            else:
+                y_pred = kmeansClust.predict(Y)
+            if hasattr(kmeansClust, 'cluster_centers_'):
+                k_cluster_centers = kmeansClust.cluster_centers_
+            else:
+                k_cluster_centers = y_pred.cluster_centers_
         else:
             y_pred = None
 
@@ -1630,18 +1646,6 @@ def main():
     ######## Write features to GFF3 out ######
     ##########################################
 
-    ''' Note: Add option: 
-        if args.runProjection and args.gffOutfile:
-            # Assign classification group to anomWin df
-            # export anom-genes by classification group. 
-            1) def function to parse allWindows dataframe to gff
-            2) Slice dataframe by classification (exclude KLI NaNs)
-            3) Sort and merge within classes
-            4) Print anomalies to file
-            5) Print genes withing anomalies '''
-
-    # Write anomalies as GFF3 outfile
-    # Note: Need to incorporate cluster identity if calculated.
     if args.gffOutfile:
         with open(os.path.join(args.tempDir, args.gffOutfile), "w") as handle:
                 for i in anomaly2GFF(anomalies,args):
@@ -1664,8 +1668,8 @@ def main():
             sys.exit(1)
 
     # Find genes in anomalies if gff annotation file provided
-    # Note: Separate output for each class, if runProjection and cluster are set
     if args.gffIn and args.gffFeatures:
+        #Note weird behaviour if gff is read in as blank by pybedtools.. seems to be bad line ending handling.
         if args.threshTypeKLI or args.forceThresholdKLI:
             gffOutname			= os.path.join(args.tempDir, "featuresIn_thresholded_Anomalies_" + os.path.basename(args.gffIn))
             features			= pybedtools.BedTool(args.gffIn).each(gffFilter, feature=args.gffFeatures)
@@ -1754,7 +1758,7 @@ def main():
 
             #Compose Dim reduction scatterplot
             if args.runProjection:
-                makeScatter(Y, args, pdf, pca_X=pca_X, y_pred=y_pred)
+                makeScatter(Y, args, pdf, pca_X=pca_X, y_pred=y_pred, centroids=k_cluster_centers)
                 
             if (args.RIP) and (args.minWordSize <= 2):
                 sns.set(color_codes=True, style="ticks")
