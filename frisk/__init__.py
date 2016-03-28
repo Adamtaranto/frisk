@@ -65,7 +65,7 @@ from . import tsne
 
 from ._version import get_versions
 __version__ = get_versions()['version']
-FRISK_VERSION = get_versions()['version']
+FRISK_VERSION = __version__
 del get_versions
 
 LETTERS = ('A', 'T', 'G', 'C')

@@ -1,2 +1,3 @@
 _version.py         export-subst
 docs/gitversion.py  export-subst
+frisk/_version.py export-subst
