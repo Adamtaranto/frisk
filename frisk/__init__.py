@@ -45,6 +45,7 @@ import pybedtools
 import re
 from sklearn.cluster import DBSCAN
 from sklearn.cluster import KMeans
+from sklearn.cluster import SpectralClustering as Spectral
 from sklearn.decomposition import IncrementalPCA
 from sklearn.decomposition import NMF
 from sklearn.decomposition import PCA
@@ -1100,7 +1101,7 @@ def makeChrPainting(selfGenome, args, anomBED, showGfffeatures=False):
     ax.get_xaxis().set_major_formatter(FuncFormatter(lambda x, p: format(int(x), ',')))
     ax.axis('tight')
     header.set_y(0.95)
-    fig.subplots_adjust(top=0.85)
+    fig.subplots_adjust(left=0.15, top=0.85)
     sns.despine(fig=fig)
 
 def mainArgs():
@@ -1292,7 +1293,7 @@ def mainArgs():
                         help='Run dimensionality reduction on all anomalous features, or on merged features.')
     parser.add_argument('--cluster',
                         default=None,
-                        choices=[None, 'DBSCAN', 'KMEANS'],
+                        choices=[None, 'DBSCAN', 'KMEANS', 'SPECTRAL'],
                         help='Attempt clustering on projection.')
     parser.add_argument('--dumpPCAdata',
                         action='store_true',
@@ -1337,7 +1338,7 @@ def mainArgs():
     parser.add_argument('--kClusters',
                         type=int,
                         default=2,
-                        help='Set number of clusters for k-means clustering.')
+                        help='Set number of clusters for k-means or spectral clustering methods.')
     #Graphics options
     parser.add_argument('--chrmlist',
                         default=None,
@@ -1565,6 +1566,10 @@ def main():
             pickle.dump(anomLabels, open(os.path.join(args.tempDir, 'anomLabels'), "wb"))
             pickle.dump(anomCounts, open(os.path.join(args.tempDir, 'anomCounts'), "wb"))
 
+        # Create blanks to hold method specific output
+        k_cluster_centers = None
+        pca_X = None
+
         # Run dimension reduction method of choice on anomaly kmer counts
         if args.runProjection == 'PCA':
             pca_X = PCA(n_components=args.projectionDims)
@@ -1585,14 +1590,11 @@ def main():
                                 angle=0.5)
             np.set_printoptions(suppress=True)
             Y = tsne_model.fit_transform(anomCounts)
-            pca_X = None
         elif args.runProjection == 'PY-TSNE':
             Y = tsne.tsne(X=anomCounts, no_dims=args.projectionDims, initial_dims=50, perplexity=args.perplexity)
-            pca_X = None
         elif args.runProjection == 'MDS':
             MDS_model = MDS(    n_components=args.projectionDims, metric=True, n_init=5, max_iter=500, verbose=0, \
                                 eps=0.001, n_jobs=1, random_state=None, dissimilarity='euclidean')
-            pca_X = None
             Y = MDS_model.fit_transform(anomCounts)
         elif args.runProjection == 'IncrementalPCA':
             IncrementalPCA_model = IncrementalPCA(n_components=args.projectionDims, whiten=False, copy=True, batch_size=None)
@@ -1602,7 +1604,6 @@ def main():
             NMF_model = NMF(    n_components=args.projectionDims, init=None, solver='cd', tol=0.0001, max_iter=200, \
                                 random_state=None, alpha=0.0, l1_ratio=0.0, verbose=0, shuffle=False, \
                                 nls_max_iter=2000, sparseness=None, beta=1, eta=0.1)
-            pca_X = None
             Y = NMF_model.fit(anomCounts).transform(anomCounts)
         # Run clustering. Optional.
         if args.cluster == 'DBSCAN':
@@ -1625,6 +1626,11 @@ def main():
                 k_cluster_centers = kmeansClust.cluster_centers_
             else:
                 k_cluster_centers = y_pred.cluster_centers_
+        elif args.cluster == 'SPECTRAL':
+            y_pred = Spectral(n_clusters=args.kClusters, eigen_solver=None, random_state=None, 
+                                n_init=20, gamma=1.0, affinity='rbf', n_neighbors=10, 
+                                eigen_tol=0.0, assign_labels='kmeans', degree=3, 
+                                coef0=1, kernel_params=None).fit_predict(Y)
         else:
             y_pred = None
 
@@ -1651,7 +1657,11 @@ def main():
                 for i in anomaly2GFF(anomalies,args):
                     handle.write(i)
         if args.cluster:
-            with open(os.path.join(args.tempDir, 'cluster_labeled_features_' + args.gffOutfile), "w") as handle:
+            if args.kClusters:
+                clustMethodTag = '_'.join((args.cluster,'k', str(args.kClusters), 'cluster_labeled', args.dimReduce))
+            else:
+                clustMethodTag = '_'.join((args.cluster, 'cluster_labeled', args.dimReduce))
+            with open(os.path.join(args.tempDir, clustMethodTag + '_' + args.gffOutfile), "w") as handle:
                 clusteredAnoms = cluster2df(Y, labels=anomLabels, y_pred=y_pred)
                 for i in anomClust2gff(clusteredAnoms):
                     handle.write(i)
