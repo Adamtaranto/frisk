@@ -458,7 +458,7 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
     return storeMaxMerIVOM
 
 def KLD(GenomeIVOM, windowIVOM, args):
-    """	Kullback-Leibler Index: Measure of relative entropy between sets of
+    """	Kullback-Leibler Divergence: Measure of relative entropy between sets of
         probability distributions."""
     # IVOM structure: dict[kmer][IVOM Score]
     # Negative number indicates kmer depleted in window relative to genome
@@ -1778,12 +1778,13 @@ def main():
                 makeScatter(Y, args, pdf, pca_X=pca_X, y_pred=y_pred, centroids=k_cluster_centers)
                 
             if (args.RIP) and (args.minWordSize <= 2):
-                chrTitle = 'Chromosome painting: Anomalies with RIP annotation track'
-                makeChrPainting(selfGenome, anomalies, chrmlist=args.chrmlist, gffIn=os.path.join(args.tempDir, args.RIPgff), 
-                                gffFeatures='RIP', title=chrTitle, 
-                                showGfffeatures=True)
-                pdf.savefig(transparent=True)
-                plt.close()
+                if os.path.isdir(os.path.join(args.tempDir, args.RIPgff)):
+                    chrTitle = 'Chromosome painting: Anomalies with RIP annotation track'
+                    makeChrPainting(selfGenome, anomalies, chrmlist=args.chrmlist, gffIn=os.path.join(args.tempDir, args.RIPgff), 
+                                    gffFeatures='RIP', title=chrTitle, 
+                                    showGfffeatures=True)
+                    pdf.savefig(transparent=True)
+                    plt.close()
 
                 # RIP summary graphics
                 sns.set(color_codes=True, style="ticks")
@@ -1823,3 +1824,4 @@ def main():
 
     # Trace
     logging.info('Finished!')
+os.path.isdir()
