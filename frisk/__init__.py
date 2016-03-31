@@ -17,7 +17,6 @@
 #########################################################################################
 # Detects regions of unusual sequence composition by comparison of local kmer           #
 # frequencies to whole genome abundance.                                                #
-# For use in detection of genomic islands and segmental lateral gene transfer events.   #
 #########################################################################################
 
 from __future__ import print_function, division, absolute_import
@@ -102,7 +101,7 @@ def findBaseRanges(s, ch, name=None, minlen=0):
                 ranges.append((name, group[0], group[-1]))
             else:
                 ranges.append((group[0], group[-1]))
-    return ranges #Format = [('ScaffName,start,stop'),('ScaffName,start,stop')]
+    return ranges # Format = [('ScaffName,start,stop'),('ScaffName,start,stop')]
 
 def countN(sequence):
     """Count number of ATGC and non-ATGC bases in sequence string"""
@@ -115,7 +114,7 @@ def countN(sequence):
             countN 	+= baseTally[i]
         else:
             count 	+= baseTally[i]
-    # return tuple with readable base count and non-ATGC base count
+    # Return tuple with readable base count and non-ATGC base count
     return (count, countN)
 
 def calcGC(sequence):
@@ -151,7 +150,7 @@ def iterFasta(path):
         if not line:
             continue
         if line.startswith(">"):
-            if name: #then first seq has been read and it is time to yield
+            if name: # Then first seq has been read and it is time to yield
                 yield (name, ''.join(seq))
             # Update the name to current seq and blank the sequence
             name = line.strip('>').split()[0]
@@ -330,8 +329,8 @@ def computeKmers(args, genomepickle=None, window=None, genomeMode=False, pcaMode
             for j in xrange(size - i + 1):
                 # Extract word of len i (kmer) starting at current base
                 word = seq[j:j + i]
-                #Do not mask query windows
-                #Optionally include lowercase masking from host genome so that kmer returns idx = None.
+                # Do not mask query windows
+                # Optionally include lowercase masking from host genome so that kmer returns idx = None.
                 if not genomeMode:
                     word = word.upper()
                 elif not args.maskHost:
@@ -374,7 +373,7 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
     windowlen   = args.windowlen
     maxKlen     = args.maxWordSize
     minKlen     = args.minWordSize
-    kRange      = maxKlen - minKlen #Equal to index position of maxmer
+    kRange      = maxKlen - minKlen # Equal to index position of maxmer
 
     # Note: Alternative define total genome space as total readable number of maxmers.
     genomeSpace = GenomeKmers[kRange+1]['totalLen'] - GenomeKmers[kRange+3]['nnTotal']
@@ -392,7 +391,7 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
         subKmers['w'] = dict()
         subKmers['p'] = dict()
 
-        if not isGenomeIVOM: #Calculating IVOM weights for window kmers against window counts
+        if not isGenomeIVOM: # Calculating IVOM weights for window kmers against window counts
             for x in range(minKlen, maxKlen+1):
                 # Process maxmer
                 if x == maxKlen:
@@ -401,26 +400,26 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
                     # Note: Should probability of observing x count of k be = x /total available non-N kmers in window?
                     subKmers['p'][x] = float(count) / ((windowSpace-(x-1)) * 2)
                 elif x >= 2:
-                    subK = k[0:x] #Grab the first x bases in maxmer
+                    subK = k[0:x] # Grab the first x bases in maxmer
                     subKmers['w'][x] = windowKmers[x-minKlen][subK] * 4**x
                     subKmers['p'][x] = float(windowKmers[x-minKlen][subK]) / ((windowSpace - (x-1)) * 2)
                 else:
-                    subK = k[0] #Grab the first base in maxmer
+                    subK = k[0] # Grab the first base in maxmer
                     subKmers['w'][x] = windowKmers[x-minKlen][subK] * 4**x
                     subKmers['p'][x] = float(windowKmers[x-minKlen][subK]) / ((windowSpace) * 2)
 
-        else: #Calculating IVOM weights for current window kmer against genome counts
+        else: # Calculating IVOM weights for current window kmer against genome counts
             for x in range(minKlen, maxKlen+1):
                 # Process maxmer
                 if x == maxKlen:
                     subKmers['w'][x] = GenomeKmers[x-minKlen][k] * 4**x
                     subKmers['p'][x] = float(GenomeKmers[x-minKlen][k]) / ((genomeSpace - (x-1)) * 2)
                 elif x >= 2:
-                    subK = k[0:x] #Grab the first x bases in maxmer
+                    subK = k[0:x] # Grab the first x bases in maxmer
                     subKmers['w'][x] = GenomeKmers[x-minKlen][subK] * 4**x
                     subKmers['p'][x] = float(GenomeKmers[x-minKlen][subK]) / ((genomeSpace - (x-1)) * 2)
                 else:
-                    subK = k[0] #Grab the first base in maxmer
+                    subK = k[0] # Grab the first base in maxmer
                     subKmers['w'][x] = GenomeKmers[x-minKlen][subK] * 4**x
                     subKmers['p'][x] = float(GenomeKmers[x-minKlen][subK]) / (genomeSpace * 2)
 
@@ -443,7 +442,7 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
                 kmerIVOM[x] = scaledW[x] * subKmers['p'][x]
             elif x < maxKlen:
                 kmerIVOM[x] = scaledW[x] * subKmers['p'][x] + ((1-scaledW[x]) * kmerIVOM[x-1])
-            else: #IVOM for max len kmer
+            else: # IVOM for max len kmer
                 kmerIVOM[x] = scaledW[x] * subKmers['p'][x] + ((1-scaledW[x]) * kmerIVOM[x-1])
 
         storeMaxMerIVOM[k] = kmerIVOM[maxKlen]
@@ -508,27 +507,27 @@ def makePicklePath(args, **kwargs):
 
 def FDBins(data):
     """	Freedman-Diaconis method for calculating optimal number of bins for dataset."""
-    IQR 	= np.subtract(*np.percentile(data, [75, 25])) #Magic '*' unpacks tuple and passes two values to subtract function.
-    bins 	= 2 * IQR * math.pow(len(data), (1.0/3.0)) #Number of bins
-    bins 	= int(round(bins)) #Otsu needs rounded integer
+    IQR 	= np.subtract(*np.percentile(data, [75, 25])) # Magic '*' unpacks tuple and passes two values to subtract function.
+    bins 	= 2 * IQR * math.pow(len(data), (1.0/3.0)) # Number of bins
+    bins 	= int(round(bins)) # Otsu needs rounded integer
     return bins
 
 def otsu(data, optBins):
-    # data is array of log10(KLD)
+    # Data is array of log10(KLD)
     raw 			= data
     data 			= np.atleast_1d(data)
     data 			= data[~ np.isnan(data)]
-    data 			= data/(max(abs(data))*-1.0) #Scale to 0-1 and make positive
+    data 			= data/(max(abs(data))*-1.0) # Scale to 0-1 and make positive
     hist, binEdges 	= np.histogram(data, bins=optBins)
-    hist 			= hist * 1.0 #Covert to floats
+    hist 			= hist * 1.0 # Convert to floats
     hist_norm 		= hist.ravel()/hist.max() #Normalise hist to largest bin
     Q 				= hist_norm.cumsum()
     bins 			= np.arange(optBins)
     fn_min 			= np.inf
     thresh 			= -1
-    for i in xrange(1, optBins): #Start from second position (1) to compare all to bin 0
+    for i in xrange(1, optBins): # Start from second position (1) to compare all to bin 0
         p1, p2 = np.hsplit(hist_norm, [i]) # Split normalised hist values into two brackets at bin i (bin 1 < i, bin 2 >=i)
-        q1, q2 = Q[i-1], Q[optBins-1] - Q[i-1] # cum sum of bin values #!! yields zero on final bin
+        q1, q2 = Q[i-1], Q[optBins-1] - Q[i-1] # Cum sum of bin values #!! yields zero on final bin
         b1, b2 = np.hsplit(bins, [i]) # Split bins into 2 brackets at bin i
         # Finding means and variances
         m1, m2 = q1/len(p1), q2/len(p2)
@@ -539,7 +538,7 @@ def otsu(data, optBins):
             fn_min = fn
             thresh = i
     logging.info('OTSU selected bin %s as threshold position' % str(thresh))
-    # Convert bact to log10(KLD)
+    # Convert back to log10(KLD)
     otsuNum = binEdges[thresh] * max(abs(raw)) * -1.0
     return otsuNum
 
@@ -765,7 +764,7 @@ def	hmm2BED(allWindows, model, dataCol='windowKLD'):
         # Slice out scaffold data where KLD data not NaN
         scaffoldWin = 	allWindows.loc[(allWindows['name'] == name) & ~(np.isnan(allWindows['windowKLD']))]
         dataSeq		= 	scaffoldWin.as_matrix(columns=[dataCol])
-        #dataSeq		=	dataSeq[:, np.newaxis]
+        # dataSeq		=	dataSeq[:, np.newaxis]
         # State prediction returned as 1D array
         stateSeq	= 	model.predict(dataSeq)
         # Append hmm state to slice
@@ -820,7 +819,7 @@ def pcaAxisLabels(pca_X, kmin=1, kmax=6):
     blankmap 	= rangeMaps(kmin, kmax)
     keylist 	= []
     axisLabels 	= []
-    idx 		= 0 #PC index
+    idx 		= 0 # Principle Component index
     for x in blankmap:
         for y in x.keys():
             keylist.append(y)
@@ -900,14 +899,14 @@ def makeScatter(Y, args, pdf, pca_X=None, y_pred=None, centroids=None):
         Y_frame['Class'] = y_pred
         Y_frame['Class_Label'] = np.NaN
         
-        #Append class labels
+        # Append class labels
         for i in y_class:
             Y_slice = Y_frame.loc[(Y_frame['Class'] == i)]
             Y_slice['Class_Label'] = names_class[np.where(y_class ==i)[0][0]]
-            #Add colours column
+            # Add colours column
             Y_frame.loc[Y_slice.index.values] = Y_slice
 
-        #Make palettes for data aware grids
+        # Make palettes for data aware grids
         pal   = dict()
         mar_order   = list()
         name_order = list()
@@ -1448,7 +1447,7 @@ def main():
 
         allWindows = pd.DataFrame(columns=columns)
 
-        #Add header row to raw output
+        # Add header row to raw output
         handle.write('\t'.join(list(allWindows.columns.values)) + '\n')
 
         # Loop over genome to get all window KLD scores
@@ -1683,7 +1682,7 @@ def main():
 
     # Find genes in anomalies if gff annotation file provided
     if args.gffIn and args.gffFeatures:
-        #Note weird behaviour if gff is read in as blank by pybedtools.. seems to be bad line ending handling.
+        # Note weird behaviour if gff is read in as blank by pybedtools.. seems to be bad line ending handling.
         if args.threshTypeKLD or args.forceThresholdKLD:
             gffOutname			= os.path.join(args.tempDir, "featuresIn_thresholded_Anomalies_" + os.path.basename(args.gffIn))
             features			= pybedtools.BedTool(args.gffIn).each(gffFilter, feature=args.gffFeatures)
@@ -1739,7 +1738,7 @@ def main():
             sns.despine()
             if KLDthreshold:
                 ax.axvline(KLDthreshold, color="#FF0000", linestyle='dashed', linewidth=2)
-            pdf.savefig() # saves the current figure into a pdf page
+            pdf.savefig() # Saves the current figure into a pdf page
             plt.close()
 
             sns.set(color_codes=True, style="ticks")
@@ -1753,7 +1752,7 @@ def main():
             pdf.savefig()  
             plt.close()
 
-            #Make chromosome painting
+            # Make chromosome painting
             chrTitle = 'Chromosome painting: Anomalies on Query scaffolds'
             makeChrPainting(selfGenome, anomalies, chrmlist=args.chrmlist, gffIn=args.gffIn, 
                             gffFeatures=args.gffFeatures, title=chrTitle, 
@@ -1761,7 +1760,7 @@ def main():
             pdf.savefig(transparent=True)
             plt.close()
 
-            #Make GC scatterplot
+            # Make GC scatterplot
             sns.set(color_codes=True, style="ticks")
             fig, ax = plt.subplots()
             header = fig.suptitle("GC vs KLD in Anomalies", fontsize="x-large")
@@ -1773,7 +1772,7 @@ def main():
             pdf.savefig()
             plt.close()
 
-            #Compose Dim reduction scatterplot
+            # Compose Dim reduction scatterplot
             if args.runProjection:
                 makeScatter(Y, args, pdf, pca_X=pca_X, y_pred=y_pred, centroids=k_cluster_centers)
                 
