@@ -457,20 +457,20 @@ def IvomBuild(windowKmers, args, GenomeKmers, isGenomeIVOM):
     # Return dictionary of scaled IVOM scores keyed by kmer
     return storeMaxMerIVOM
 
-def KLI(GenomeIVOM, windowIVOM, args):
+def KLD(GenomeIVOM, windowIVOM, args):
     """	Kullback-Leibler Index: Measure of relative entropy between sets of
         probability distributions."""
     # IVOM structure: dict[kmer][IVOM Score]
     # Negative number indicates kmer depleted in window relative to genome
     # Positive number indicates enriched in window relative to genome
-    windowKLI = 0
+    windowKLD = 0
     for k in windowIVOM:
         w = float(windowIVOM[k])
         G = float(GenomeIVOM[k])
         if G != 0:
-            windowKLI += (w*math.log((w/G), 2))
+            windowKLD += (w*math.log((w/G), 2))
         # Note: Using log2 instead of log10 to accentuate variance within small range.
-    return windowKLI
+    return windowKLD
 
 def calcRIP(windowKmers,args):
     """	Calculate measures of Repeat Induced Point mutation (RIP);
@@ -496,14 +496,14 @@ def calcRIP(windowKmers,args):
     return (PI, SI, CRI)
 
 def makePicklePath(args, **kwargs):
-    """ Generate pathname for export of genome kmer counts or window KLI scores. """
+    """ Generate pathname for export of genome kmer counts or window KLD scores. """
     pathbase = os.path.basename(args.hostSeq)
     if kwargs['space'] == 'genome':
         pickleOut = os.path.join(args.tempDir, pathbase + "_kmers_" + str(args.minWordSize) + "_" + str(args.maxWordSize) + "_" + kwargs['space'] + '.p')
     elif kwargs['space'] == 'window':
         if args.querySeq:
             pathbase = os.path.basename(args.querySeq)
-        pickleOut = os.path.join(args.tempDir, pathbase + "_kmers_" + str(args.minWordSize) + "_" + str(args.maxWordSize) + "_KLI_" + kwargs['space'] + "_" + str(args.windowlen) + "_increment_" + str(args.increment) + '.p')
+        pickleOut = os.path.join(args.tempDir, pathbase + "_kmers_" + str(args.minWordSize) + "_" + str(args.maxWordSize) + "_KLD_" + kwargs['space'] + "_" + str(args.windowlen) + "_increment_" + str(args.increment) + '.p')
     return pickleOut
 
 def FDBins(data):
@@ -514,7 +514,7 @@ def FDBins(data):
     return bins
 
 def otsu(data, optBins):
-    # data is array of log10(KLI)
+    # data is array of log10(KLD)
     raw 			= data
     data 			= np.atleast_1d(data)
     data 			= data[~ np.isnan(data)]
@@ -539,7 +539,7 @@ def otsu(data, optBins):
             fn_min = fn
             thresh = i
     logging.info('OTSU selected bin %s as threshold position' % str(thresh))
-    # Convert bact to log10(KLI)
+    # Convert bact to log10(KLD)
     otsuNum = binEdges[thresh] * max(abs(raw)) * -1.0
     return otsuNum
 
@@ -559,9 +559,9 @@ def anomaly2GFF(anomBED, args, **kwargs):
         annotType = 'Kmer-anomaly'
     for i in anomBED:
         if args.dimReduce == 'windows':
-            content = [str(i[0]), 'frisk_' + FRISK_VERSION, annotType, str(i[1]), str(i[2]), '.', '+', '.', ';'.join(['ID=Anomaly_' + str(n).zfill(len(str(len(anomBED)))), 'KLI=' + str(i[3])])]           
+            content = [str(i[0]), 'frisk_' + FRISK_VERSION, annotType, str(i[1]), str(i[2]), '.', '+', '.', ';'.join(['ID=Anomaly_' + str(n).zfill(len(str(len(anomBED)))), 'KLD=' + str(i[3])])]           
         else:
-            content = [str(i[0]), 'frisk_' + FRISK_VERSION, annotType, str(i[1]), str(i[2]), '.', '+', '.', ';'.join(['ID=Anomaly_' + str(n).zfill(len(str(len(anomBED)))), 'maxKLI=' + str(i[3]), 'minKLI=' + str(i[4]), 'meanKLI=' + str(i[5])])]
+            content = [str(i[0]), 'frisk_' + FRISK_VERSION, annotType, str(i[1]), str(i[2]), '.', '+', '.', ';'.join(['ID=Anomaly_' + str(n).zfill(len(str(len(anomBED)))), 'maxKLD=' + str(i[3]), 'minKLD=' + str(i[4]), 'meanKLD=' + str(i[5])])]
         if n == 1:
             yield '##gff-version 3' + '\n'
         yield '\t'.join(content) + '\n'
@@ -576,12 +576,12 @@ def anomClust2gff(df):
         n += 1
 
 def RIP2GFF(ripBED):
-    # name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
+    # name, start, stop, KLD max, PI min, SI max, CRI min, CRI max
     n = 1
     annotType = 'RIP'
     ripBED = natural_sort(ripBED, key=itemgetter(0))
     for i in ripBED:
-        content = [str(i[0]), 'frisk_' + FRISK_VERSION, annotType, str(i[1]), str(i[2]), '.', '+', '.', ';'.join(['ID=Anomaly_' + str(n).zfill(len(str(len(ripBED)))), 'maxKLI=' + str(i[3]), 'minPI=' + str(i[4]), 'maxSI=' + str(i[5]), 'minCRI=' + str(i[6]), 'maxCRI=' + str(i[7])])]
+        content = [str(i[0]), 'frisk_' + FRISK_VERSION, annotType, str(i[1]), str(i[2]), '.', '+', '.', ';'.join(['ID=Anomaly_' + str(n).zfill(len(str(len(ripBED)))), 'maxKLD=' + str(i[3]), 'minPI=' + str(i[4]), 'maxSI=' + str(i[5]), 'minCRI=' + str(i[6]), 'maxCRI=' + str(i[7])])]
         if n == 1:
             yield '##gff-version 3' + '\n'
         yield '\t'.join(content) + '\n'
@@ -645,72 +645,72 @@ def cluster2df(Y, labels=None, y_pred=None):
         Y_frame.loc[Y_slice.index.values] = Y_slice  
     return Y_frame
 
-def thresholdKLI(intervalList, threshold, args, threshCol='windowKLI', merge=True):
-    intervalList = intervalList.loc[~(np.isnan(intervalList['windowKLI']))].sort_values(
+def thresholdKLD(intervalList, threshold, args, threshCol='windowKLD', merge=True):
+    intervalList = intervalList.loc[~(np.isnan(intervalList['windowKLD']))].sort_values(
         ['name','start','stop'],ascending=[1,1,1],na_position='last')
     if args.findSelf:
         tItems = intervalList.loc[(np.log10(intervalList[threshCol]) <= threshold)]
     else:
         tItems = intervalList.loc[(np.log10(intervalList[threshCol]) >= threshold)]
     tItems[['start','stop']] = tItems.loc[:,('start','stop')].astype(int) #Note: Pandas wants to complain about chained assignments here. Ignore.
-    tItems[['name','windowKLI']] = tItems.loc[:,('name','windowKLI')].astype(str)
-    anomaliesBED  = pybedtools.BedTool([i for i in tItems.as_matrix(columns=['name','start','stop','windowKLI']).tolist()])
-    tItems[['windowKLI']] = tItems.loc[:,('windowKLI')].astype(float)
+    tItems[['name','windowKLD']] = tItems.loc[:,('name','windowKLD')].astype(str)
+    anomaliesBED  = pybedtools.BedTool([i for i in tItems.as_matrix(columns=['name','start','stop','windowKLD']).tolist()])
+    tItems[['windowKLD']] = tItems.loc[:,('windowKLD')].astype(float)
     if merge:
         anomalies = anomaliesBED.merge(d=args.mergeDist, c='4,4,4', o='max,min,mean')
     else:
         anomalies = anomaliesBED
     return anomalies,tItems
 
-def setKLIThresh(args, logKLI):
-    # Calc optimal bins for KLI data
-    if FDBins(logKLI) < 30:
+def setKLDThresh(args, logKLD):
+    # Calc optimal bins for KLD data
+    if FDBins(logKLD) < 30:
         optBins = 30
     else:
-        optBins = FDBins(logKLI)
-    if args.threshTypeKLI or args.forceThresholdKLI:
-        # Check for user specified KLI threshold
-        if args.forceThresholdKLI:
-            KLIthreshold = np.log10(float(args.forceThresholdKLI))
-            logging.info('Forcing log10(KLI) threshold = %s' % str(KLIthreshold))
+        optBins = FDBins(logKLD)
+    if args.threshTypeKLD or args.forceThresholdKLD:
+        # Check for user specified KLD threshold
+        if args.forceThresholdKLD:
+            KLDthreshold = np.log10(float(args.forceThresholdKLD))
+            logging.info('Forcing log10(KLD) threshold = %s' % str(KLDthreshold))
         # Use Otsu method to set threshold
-        elif args.threshTypeKLI == 'otsu':
-            logging.info('Calculating optimal KLI threshold by Otsu binarization.')
-            if FDBins(logKLI) < 10: #Calculate optimal number of bins for logKLI set using Freedman-Diaconnis method.
-                logging.warning('[WARNING] Low variance in log10(KLI) data: Review data distribution, \
+        elif args.threshTypeKLD == 'otsu':
+            logging.info('Calculating optimal KLD threshold by Otsu binarization.')
+            if FDBins(logKLD) < 10: #Calculate optimal number of bins for logKLD set using Freedman-Diaconnis method.
+                logging.warning('[WARNING] Low variance in log10(KLD) data: Review data distribution, \
                                 consider percentile or manual thresholding.')
-                KLIthreshold = otsu(logKLI, optBins) #Attempt Otsu, though probably not a good idea.
-                logging.info('Optimal log10(KLI) threshold = %s' % str(KLIthreshold))
+                KLDthreshold = otsu(logKLD, optBins) #Attempt Otsu, though probably not a good idea.
+                logging.info('Optimal log10(KLD) threshold = %s' % str(KLDthreshold))
             else:
-                KLIthreshold = otsu(logKLI, optBins) #Use Otsu binarization to calc optimal log10 threshold for weird KLI scores
-                logging.info('Optimal log10(KLI) threshold = %s' % str(KLIthreshold))
+                KLDthreshold = otsu(logKLD, optBins) #Use Otsu binarization to calc optimal log10 threshold for weird KLD scores
+                logging.info('Optimal log10(KLD) threshold = %s' % str(KLDthreshold))
         # Optional set threshold at percentile
-        elif args.threshTypeKLI == 'percentile':
-            KLIthreshold = np.percentile(logKLI, args.percentileKLI)
-            logging.info('Setting threshold at %s percentile of log10(KLI)= %s' % (str(args.percentileKLI), str(KLIthreshold)))
-    return KLIthreshold,optBins
+        elif args.threshTypeKLD == 'percentile':
+            KLDthreshold = np.percentile(logKLD, args.percentileKLD)
+            logging.info('Setting threshold at %s percentile of log10(KLD)= %s' % (str(args.percentileKLD), str(KLDthreshold)))
+    return KLDthreshold,optBins
 
 def thresholdRIP(intervalList, args):
     logging.info('Extracting RIP features: CRImin = %s, PImin = %s, SImax = %s, CRIpeak = %s \
     ' % (str(args.minCRI), str(args.minPI), str(args.maxSI), str(args.peakCRI)))
-    intervalList = intervalList[['name', 'start', 'stop', 'windowKLI', 'PI', 'SI', 'CRI']]
+    intervalList = intervalList[['name', 'start', 'stop', 'windowKLD', 'PI', 'SI', 'CRI']]
     intervalList = intervalList.loc[~(np.isnan(intervalList['PI'])) 
         & ~(np.isnan(intervalList['SI']))
         & ~(np.isnan(intervalList['CRI']))
-        & ~(np.isnan(intervalList['windowKLI']))
+        & ~(np.isnan(intervalList['windowKLD']))
         ].sort_values(['name','start','stop'], ascending=[1,1,1], na_position='last')
     basicTresh = intervalList.loc[(intervalList['PI'] >= args.minPI)
         & (intervalList['SI'] <= args.maxSI )
         & (intervalList['CRI'] >= args.minCRI)]
     peakThresh = intervalList.loc[(intervalList['CRI'] >= args.peakCRI)]
     basicTresh[['start','stop']] = basicTresh[['start','stop']].astype(int)
-    basicTresh[['name','windowKLI','PI', 'SI', 'CRI']] = basicTresh[['name','windowKLI','PI', 'SI', 'CRI']].astype(str)
+    basicTresh[['name','windowKLD','PI', 'SI', 'CRI']] = basicTresh[['name','windowKLD','PI', 'SI', 'CRI']].astype(str)
     peakThresh[['start','stop']] = peakThresh[['start','stop']].astype(int)
-    peakThresh[['name','windowKLI','PI', 'SI', 'CRI']] = peakThresh[['name','windowKLI','PI', 'SI', 'CRI']].astype(str)
+    peakThresh[['name','windowKLD','PI', 'SI', 'CRI']] = peakThresh[['name','windowKLD','PI', 'SI', 'CRI']].astype(str)
     if len(basicTresh) > 0 and len(peakThresh) > 0:
-        # name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
+        # name, start, stop, KLD max, PI min, SI max, CRI min, CRI max
         RIPbasic  = pybedtools.BedTool([i for i in basicTresh.as_matrix(
-            columns=['name','start','stop','windowKLI','PI', 'SI', 'CRI']).tolist()]
+            columns=['name','start','stop','windowKLD','PI', 'SI', 'CRI']).tolist()]
             ).merge(d=0, c='4,5,6,7,7', o='max,min,max,min,max')
         RIPpeaks  = pybedtools.BedTool([i for i in peakThresh.as_matrix(
             columns=['name','start','stop']).tolist()])
@@ -755,15 +755,15 @@ def updateHMM(smallHMM, bigThresh): #BED interval objects. A = Fine scale guide,
     newAnnotations 	= pybedtools.BedTool(updatedBoundaries)
     return newAnnotations
 
-def	hmm2BED(allWindows, model, dataCol='windowKLI'):
+def	hmm2BED(allWindows, model, dataCol='windowKLD'):
     allIntervals	=	list()
     # Add empty column to store hmm state data
     allWindows['hmmState'] = np.NaN
     # Get unique scaffold names from tuples in allWindows
     scaffoldList	= 	[i for i in Counter(elem for elem in allWindows['name'])]
     for name in scaffoldList:
-        # Slice out scaffold data where KLI data not NaN
-        scaffoldWin = 	allWindows.loc[(allWindows['name'] == name) & ~(np.isnan(allWindows['windowKLI']))]
+        # Slice out scaffold data where KLD data not NaN
+        scaffoldWin = 	allWindows.loc[(allWindows['name'] == name) & ~(np.isnan(allWindows['windowKLD']))]
         dataSeq		= 	scaffoldWin.as_matrix(columns=[dataCol])
         #dataSeq		=	dataSeq[:, np.newaxis]
         # State prediction returned as 1D array
@@ -834,11 +834,11 @@ def pcaAxisLabels(pca_X, kmin=1, kmax=6):
     return axisLabels
 
 def makeScatter_X_logKLD(df=None, Xcol=None ,ax=None):
-    clean_df = df.loc[~(np.isnan(df[Xcol]) & ~(np.isnan(df['windowKLI'])))]
-    clean_df['log10windowKLI'] = np.log10(clean_df['windowKLI'])
-    pr,rpval = pearsonr(clean_df['log10windowKLI'], clean_df[Xcol])
+    clean_df = df.loc[~(np.isnan(df[Xcol]) & ~(np.isnan(df['windowKLD'])))]
+    clean_df['log10windowKLD'] = np.log10(clean_df['windowKLD'])
+    pr,rpval = pearsonr(clean_df['log10windowKLD'], clean_df[Xcol])
     r2 = pr ** 2
-    sp = sns.regplot('log10windowKLI', Xcol, data=clean_df, 
+    sp = sns.regplot('log10windowKLD', Xcol, data=clean_df, 
                  x_ci='ci', ci=95, scatter=True, fit_reg=True,
                  dropna=True, color="#5BBCD6", marker='o',
                  line_kws={"color": "#F98400"}, scatter_kws={'alpha':0.8},
@@ -1138,7 +1138,7 @@ def mainArgs():
                         '--outfile',
                         type=str,
                         default='raw_window_scores.bed',
-                        help='Write KLI-IVOM bed track to this file')
+                        help='Write KLD-IVOM bed track to this file')
     parser.add_argument('-t',
                         '--tempDir',
                         type=str,
@@ -1204,7 +1204,7 @@ def mainArgs():
                         host genome towards genome totals. Does not affect kmer counting in query genome windows.')
     parser.add_argument('--exitAfter',
                         default=None,
-                        choices=[None, 'GenomeKmers', 'WindowKLI'],
+                        choices=[None, 'GenomeKmers', 'WindowKLD'],
                         help='Exit after completing task.')
     parser.add_argument('--recalc',
                         action='store_false',
@@ -1214,35 +1214,35 @@ def mainArgs():
     parser.add_argument('--recalcWin',
                         action='store_false',
                         default=True,
-                        help='Force recalculation of KLI score for specified window length and icrement if set. \
-                    	Default uses window KLIs from previous run.')
+                        help='Force recalculation of KLD score for specified window length and icrement if set. \
+                    	Default uses window KLDs from previous run.')
     parser.add_argument('--scaffoldsAll',
                         action='store_true',
                         default=False,
                         help='If genomic scaffold is below minimum window size, process \
                     	whole scaffold as single window.')
 
-    # Thresholding options for KLI
-    parser.add_argument('--threshTypeKLI',
+    # Thresholding options for KLD
+    parser.add_argument('--threshTypeKLD',
                         default= None,
                         choices=[None, 'percentile', 'otsu'],
-                        help='Options for defining non-self threshold on window KLI scores: \
+                        help='Options for defining non-self threshold on window KLD scores: \
                         Otsu binarisation, 2-state HMM, percentile.')
-    parser.add_argument('--percentileKLI',
+    parser.add_argument('--percentileKLD',
                         type=float,
                         default=99.0,
-                        help='Percentile at which to threshold window KLI scores. \
+                        help='Percentile at which to threshold window KLD scores. \
                     	By default, lower 99 percent windows are excluded.')
-    parser.add_argument('--hmmKLI',
+    parser.add_argument('--hmmKLD',
                         action='store_true',
                         default=False,
-                        help='Run 2-state HMM to classify windows as self or non-self based on KLI score.')
+                        help='Run 2-state HMM to classify windows as self or non-self based on KLD score.')
     parser.add_argument('-F',
-                        '--forceThresholdKLI',
+                        '--forceThresholdKLD',
                         type=float,
                         default=None,
-                        help='KLI score above which a window will be considered anomalous. \
-                    	Note: Given as raw KLI, not log10(KLI).')
+                        help='KLD score above which a window will be considered anomalous. \
+                    	Note: Given as raw KLD, not log10(KLD).')
 
     # RIP options
     parser.add_argument('--RIP',
@@ -1354,7 +1354,7 @@ def mainArgs():
     parser.add_argument('--updateHMM',
                         action='store_true',
                         default=False,
-                        help='#FutureFunction: Revise KLI anomaly boundaries using HMM anomaly track')
+                        help='#FutureFunction: Revise KLD anomaly boundaries using HMM anomaly track')
     parser.add_argument('--updateWin',
                         type=int,
                         default=1000,
@@ -1368,7 +1368,7 @@ def mainArgs():
     parser.add_argument('--findSelf',
                         action='store_true',
                         default=False,
-                        help='Reverse mode: Finds windows in query genome with KLI BELOW threshold. \
+                        help='Reverse mode: Finds windows in query genome with KLD BELOW threshold. \
                         i.e. MORE like the host genome.')
 
     args = parser.parse_args()
@@ -1390,7 +1390,7 @@ def main():
     
     # Make path to store genome kmer calculations
     genomepickle 	= makePicklePath(args, space='genome')
-    # Make path to store window KLI calculations
+    # Make path to store window KLD calculations
     windowsPickle 	= makePicklePath(args, space='window')
 
     # Set query sequence as self if none provided
@@ -1428,11 +1428,11 @@ def main():
 
     ##########################################
     ###########   Extract Windows   ##########
-    ############  Calc KLI Score  ############
+    ############  Calc KLD Score  ############
     ##########################################
 
     if os.path.isfile(windowsPickle) and args.recalcWin:
-        logging.info('Importing previously calculated window KLI scores from: %s' % windowsPickle)
+        logging.info('Importing previously calculated window KLD scores from: %s' % windowsPickle)
         allWindows = pickle.load(open(windowsPickle, "rb"))
     else:
         # Initialise textfile output
@@ -1440,32 +1440,32 @@ def main():
         outPath = os.path.join(args.tempDir, out)
         handle  = open(outPath, "w")
 
-        # Pandas dataframe to store KLI and RIP stats by window
+        # Pandas dataframe to store KLD and RIP stats by window
         if (args.RIP) and (args.minWordSize <= 2):
-            columns = ['name', 'start', 'stop', 'windowKLI', 'GC', 'PI', 'SI', 'CRI']
+            columns = ['name', 'start', 'stop', 'windowKLD', 'GC', 'PI', 'SI', 'CRI']
         else:
-            columns = ['name', 'start', 'stop', 'windowKLI', 'GC']
+            columns = ['name', 'start', 'stop', 'windowKLD', 'GC']
 
         allWindows = pd.DataFrame(columns=columns)
 
         #Add header row to raw output
         handle.write('\t'.join(list(allWindows.columns.values)) + '\n')
 
-        # Loop over genome to get all window KLI scores
+        # Loop over genome to get all window KLD scores
         for seq, name, start, stop in crawlGenome(args, querySeq): #Note: coords are inclusive i.e. 1:10 = 0:9 in string
             target 			= [(name, seq)]
             windowKmers 	= computeKmers(args, genomepickle=None, window=target, genomeMode=False, kmerMap=blankMap, getMeta=True)
             GenomeIVOM  	= IvomBuild(windowKmers, args, genomeKmers, True)
             windowIVOM  	= IvomBuild(windowKmers, args, genomeKmers, False)
-            windowKLI		= KLI(GenomeIVOM, windowIVOM, args)
+            windowKLD		= KLD(GenomeIVOM, windowIVOM, args)
             windowGC        = calcGC(seq)
             if (args.RIP) and (args.minWordSize <= 2):
                 PI, SI, CRI 	= calcRIP(windowKmers,args)
-                outString	= [name, str(start), str(stop), str(windowKLI), str(windowGC), str(PI), str(SI), str(CRI)]
-                allWindows.loc[len(allWindows)]=[name, start, stop, windowKLI, windowGC, PI, SI, CRI]
+                outString	= [name, str(start), str(stop), str(windowKLD), str(windowGC), str(PI), str(SI), str(CRI)]
+                allWindows.loc[len(allWindows)]=[name, start, stop, windowKLD, windowGC, PI, SI, CRI]
             else:
-                outString	= [name, str(start), str(stop), str(windowKLI), str(windowGC)]
-                allWindows.loc[len(allWindows)]=[name, start, stop, windowKLI, windowGC] #Mind that KLI does not get stored as scientific notation
+                outString	= [name, str(start), str(stop), str(windowKLD), str(windowGC)]
+                allWindows.loc[len(allWindows)]=[name, start, stop, windowKLD, windowGC] #Mind that KLD does not get stored as scientific notation
 
             handle.write('\t'.join(outString) + '\n')
             print('\t'.join(outString))
@@ -1473,15 +1473,15 @@ def main():
         # Close text output
         handle.close()
 
-        # Write KLI-by-window annotations to file
-        logging.info('Saving calculated window KLI scores as: %s' % windowsPickle)
+        # Write KLD-by-window annotations to file
+        logging.info('Saving calculated window KLD scores as: %s' % windowsPickle)
         pickle.dump(allWindows, open(windowsPickle, "wb"))
 
-        if args.exitAfter == 'WindowKLI':
-            logging.info('Finished calculating window KLI scores. Exiting.')
+        if args.exitAfter == 'WindowKLD':
+            logging.info('Finished calculating window KLD scores. Exiting.')
             sys.exit(0)
         else:
-            logging.info('Finished calculating window KLI scores.')
+            logging.info('Finished calculating window KLD scores.')
 
     ##########################################
     ###########  Calculate and Set  ##########
@@ -1498,27 +1498,27 @@ def main():
 
     ##########################################
     ###########  Calculate and Set  ##########
-    #############  KLI threshold  ############
+    #############  KLD threshold  ############
     ##########################################
 
-    # Get KLI data for all surveyed windows
-    allKLI 			=	allWindows.as_matrix(columns=['windowKLI']).astype(float)
-    logKLI 			=	np.log10(allKLI)
-    KLIthreshold,optBins	=	setKLIThresh(args, logKLI)
+    # Get KLD data for all surveyed windows
+    allKLD 			=	allWindows.as_matrix(columns=['windowKLD']).astype(float)
+    logKLD 			=	np.log10(allKLD)
+    KLDthreshold,optBins	=	setKLDThresh(args, logKLD)
 
     ##########################################
     ##########  Set anomaly feature  #########
     ######  boundaries using 2-state HMM  ####
     ##########################################
 
-    if args.hmmKLI:
+    if args.hmmKLD:
         # Create 2-state HMM model
         model	=	hmm.GaussianHMM(n_components=2, covariance_type="full")
-        # Train on KLI strings from all scaffolds
-        model.fit(allKLI[~np.isnan(allKLI)][:, np.newaxis]) #Note: Ideally pass all scaffold data sequences in separately
+        # Train on KLD strings from all scaffolds
+        model.fit(allKLD[~np.isnan(allKLD)][:, np.newaxis]) #Note: Ideally pass all scaffold data sequences in separately
         # Use model to prdict HMM state for all scaffolds
         # Return hmmBED object and updates allWindow object which now includes 'hmmState' column
-        hmmBED,allWindows	= hmm2BED(allWindows, model, dataCol='windowKLI')
+        hmmBED,allWindows	= hmm2BED(allWindows, model, dataCol='windowKLD')
         # Write hmm states as GFF3 outfile
         with open(os.path.join(args.tempDir, args.hmmOutfile), "w") as handle:
             for i in hmmBED2GFF(hmmBED):
@@ -1533,10 +1533,10 @@ def main():
     if args.runProjection:
         if args.dimReduce == 'features':
             # Merge anomalous windows to preform dimensionality reduction on feature stats
-            anomWin,anomWin_df  = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=True)
+            anomWin,anomWin_df  = thresholdKLD(allWindows, KLDthreshold, args, threshCol='windowKLD', merge=True)
         elif args.dimReduce == 'windows':
-            # Anomalous windows by KLI threshold without merging
-            anomWin,anomWin_df  = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=False)
+            # Anomalous windows by KLD threshold without merging
+            anomWin,anomWin_df  = thresholdKLD(allWindows, KLDthreshold, args, threshCol='windowKLD', merge=False)
         # Extract nucleotide sequences
         logging.info('Recovering %s sequences from anomalous windows.' % str(len(anomWin)))
         anomSeqs = getBEDSeq(selfGenome, anomWin) #generator object that yields (name,seq) tuples.
@@ -1647,10 +1647,10 @@ def main():
     if args.runProjection: # Recycle if already calculated for projection
         #Note: This can result in individual windows being reported if args.dimReduce == 'windows'
         anomalies = anomWin
-        logging.info('Detected %s features above KLI threshold.' % str(len(anomalies)))
-    elif KLIthreshold:
-        anomalies,anomWin_df = thresholdKLI(allWindows, KLIthreshold, args, threshCol='windowKLI', merge=True)
-        logging.info('Detected %s features above KLI threshold.' % str(len(anomalies)))
+        logging.info('Detected %s features above KLD threshold.' % str(len(anomalies)))
+    elif KLDthreshold:
+        anomalies,anomWin_df = thresholdKLD(allWindows, KLDthreshold, args, threshCol='windowKLD', merge=True)
+        logging.info('Detected %s features above KLD threshold.' % str(len(anomalies)))
 
     ##########################################
     ######## Write features to GFF3 out ######
@@ -1672,7 +1672,7 @@ def main():
 
     if (args.RIP) and (args.minWordSize <= 2):
         if 'CRI' in allWindows.columns:
-            RIPbed	= thresholdRIP(allWindows, args) #name, start, stop, KLI max, PI min, SI max, CRI min, CRI max
+            RIPbed	= thresholdRIP(allWindows, args) #name, start, stop, KLD max, PI min, SI max, CRI min, CRI max
             if RIPbed:
                 with open(os.path.join(args.tempDir, args.RIPgff), "w") as handle:
                     for i in RIP2GFF(RIPbed):
@@ -1684,7 +1684,7 @@ def main():
     # Find genes in anomalies if gff annotation file provided
     if args.gffIn and args.gffFeatures:
         #Note weird behaviour if gff is read in as blank by pybedtools.. seems to be bad line ending handling.
-        if args.threshTypeKLI or args.forceThresholdKLI:
+        if args.threshTypeKLD or args.forceThresholdKLD:
             gffOutname			= os.path.join(args.tempDir, "featuresIn_thresholded_Anomalies_" + os.path.basename(args.gffIn))
             features			= pybedtools.BedTool(args.gffIn).each(gffFilter, feature=args.gffFeatures)
             extractedFeatures 	= features.window(b=anomalies, w=args.gffRange, u=True)
@@ -1694,7 +1694,7 @@ def main():
             else:
                 logging.info('No features from %s detected within %s bases of anomalies.' % (args.gffIn, str(args.gffRange)))
 
-        if args.hmmKLI:
+        if args.hmmKLD:
             # State1 and State2 live here
             hmmOutputFile = os.path.join(args.tempDir, args.hmmOutfile)
             gffOutname1			= os.path.join(args.tempDir, "featuresIn_hmm_State1_" + os.path.basename(args.gffIn))
@@ -1734,11 +1734,11 @@ def main():
             header = fig.suptitle('Genome-wide Self Similarity Distribution', fontsize="x-large")
             header.set_y(0.95)
             fig.subplots_adjust(top=0.85)
-            sns.distplot(logKLI, hist=True, bins=100, kde=False, rug=False, color="#00A08A", hist_kws={"alpha": 1}, ax=ax)
+            sns.distplot(logKLD, hist=True, bins=100, kde=False, rug=False, color="#00A08A", hist_kws={"alpha": 1}, ax=ax)
             ax.set(xlabel='log10 Kullback-Leibler Divergence', ylabel='Genomic Window Count')
             sns.despine()
-            if KLIthreshold:
-                ax.axvline(KLIthreshold, color="#FF0000", linestyle='dashed', linewidth=2)
+            if KLDthreshold:
+                ax.axvline(KLDthreshold, color="#FF0000", linestyle='dashed', linewidth=2)
             pdf.savefig() # saves the current figure into a pdf page
             plt.close()
 
@@ -1747,7 +1747,7 @@ def main():
             header = fig.suptitle('Genome-wide Self Similarity Distribution', fontsize="x-large")
             header.set_y(0.95)
             fig.subplots_adjust(top=0.85)
-            sns.distplot(allKLI, hist=True, bins=optBins, kde=False, rug=False, color="#00A08A", hist_kws={"alpha": 1}, ax=ax)
+            sns.distplot(allKLD, hist=True, bins=optBins, kde=False, rug=False, color="#00A08A", hist_kws={"alpha": 1}, ax=ax)
             ax.set(xlabel='Raw Kullback-Leibler Divergence', ylabel='Genomic Window Count')
             sns.despine()
             pdf.savefig()  
