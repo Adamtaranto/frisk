@@ -1340,6 +1340,9 @@ def mainArgs():
                         type=int,
                         default=2,
                         help='Set number of clusters for k-means or spectral clustering methods.')
+    parser.add_argument('--seed',
+                        default=None,
+                        help='Set random number seed for use in decomposition and clustering.')
     # Graphics options
     parser.add_argument('--chrmlist',
                         default=None,
@@ -1586,7 +1589,7 @@ def main():
                                 metric='euclidean', 
                                 init=args.tsneInitPCA, 
                                 verbose=0, 
-                                random_state=None, 
+                                random_state=args.seed, 
                                 method=args.tsneGradient,
                                 angle=0.5)
             np.set_printoptions(suppress=True)
@@ -1595,7 +1598,7 @@ def main():
             Y = tsne.tsne(X=anomCounts, no_dims=args.projectionDims, initial_dims=50, perplexity=args.perplexity)
         elif args.runProjection == 'MDS':
             MDS_model = MDS(    n_components=args.projectionDims, metric=True, n_init=5, max_iter=500, verbose=0, \
-                                eps=0.001, n_jobs=1, random_state=None, dissimilarity='euclidean')
+                                eps=0.001, n_jobs=1, random_state=args.seed, dissimilarity='euclidean')
             Y = MDS_model.fit_transform(anomCounts)
         elif args.runProjection == 'IncrementalPCA':
             IncrementalPCA_model = IncrementalPCA(n_components=args.projectionDims, whiten=False, copy=True, batch_size=None)
@@ -1603,7 +1606,7 @@ def main():
             Y = IncrementalPCA_model.fit(anomCounts).transform(anomCounts)
         elif args.runProjection == 'NMF':
             NMF_model = NMF(    n_components=args.projectionDims, init=None, solver='cd', tol=0.0001, max_iter=200, \
-                                random_state=None, alpha=0.0, l1_ratio=0.0, verbose=0, shuffle=False, \
+                                random_state=args.seed, alpha=0.0, l1_ratio=0.0, verbose=0, shuffle=False, \
                                 nls_max_iter=2000, sparseness=None, beta=1, eta=0.1)
             Y = NMF_model.fit(anomCounts).transform(anomCounts)
         # Run clustering. Optional.
@@ -1618,7 +1621,7 @@ def main():
         elif args.cluster == 'KMEANS':
             kmeansClust = KMeans(n_clusters=args.kClusters, init='k-means++', n_init=20, max_iter=500, 
                                 tol=0.0001, precompute_distances='auto', verbose=0, 
-                                random_state=None, copy_x=True, n_jobs=1).fit(Y)
+                                random_state=args.seed, copy_x=True, n_jobs=1).fit(Y)
             if hasattr(kmeansClust, 'labels_'):
                 y_pred = kmeansClust.labels_.astype(np.int)
             else:
@@ -1628,7 +1631,7 @@ def main():
             else:
                 k_cluster_centers = y_pred.cluster_centers_
         elif args.cluster == 'SPECTRAL':
-            y_pred = Spectral(n_clusters=args.kClusters, eigen_solver=None, random_state=None, 
+            y_pred = Spectral(n_clusters=args.kClusters, eigen_solver=None, random_state=args.seed, 
                                 n_init=20, gamma=1.0, affinity='rbf', n_neighbors=10, 
                                 eigen_tol=0.0, assign_labels='kmeans', degree=3, 
                                 coef0=1, kernel_params=None).fit_predict(Y)
