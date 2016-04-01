@@ -675,13 +675,13 @@ def setKLDThresh(args, logKLD):
         # Use Otsu method to set threshold
         elif args.threshTypeKLD == 'otsu':
             logging.info('Calculating optimal KLD threshold by Otsu binarization.')
-            if FDBins(logKLD) < 10: #Calculate optimal number of bins for logKLD set using Freedman-Diaconnis method.
+            if FDBins(logKLD) < 10: # Calculate optimal number of bins for logKLD set using Freedman-Diaconnis method.
                 logging.warning('[WARNING] Low variance in log10(KLD) data: Review data distribution, \
                                 consider percentile or manual thresholding.')
-                KLDthreshold = otsu(logKLD, optBins) #Attempt Otsu, though probably not a good idea.
+                KLDthreshold = otsu(logKLD, optBins) # Attempt Otsu, though probably not a good idea.
                 logging.info('Optimal log10(KLD) threshold = %s' % str(KLDthreshold))
             else:
-                KLDthreshold = otsu(logKLD, optBins) #Use Otsu binarization to calc optimal log10 threshold for weird KLD scores
+                KLDthreshold = otsu(logKLD, optBins) # Use Otsu binarization to calc optimal log10 threshold for weird KLD scores
                 logging.info('Optimal log10(KLD) threshold = %s' % str(KLDthreshold))
         # Optional set threshold at percentile
         elif args.threshTypeKLD == 'percentile':
@@ -794,6 +794,22 @@ def range2interval(rangeList, scaffoldWindows, state):
         str(state)
         )
 
+def scrubMirrors(kDicts):
+    cleanKmers = list()
+    for k_order in kDicts:
+        uniqKeys = list()
+        keylist  = k_order.keys()
+        for key in keylist:
+            if key in uniqKeys or revComplement(key) in uniqKeys:
+                continue
+            else:
+                uniqKeys.append(key)
+        newDict = dict()
+        for keepKey in uniqKeys:
+            newDict[keepKey] = k_order[keepKey]
+        cleanKmers.append(newDict)
+    return cleanKmers
+
 def flattenKmerMap(kMap, window=1, seqLen=1, kmin=1, kmax=5, prop=False):
     '''Takes kmer count map (nested dict), flattens dictionaries to an array
         and scales counts to a standard window length.'''
@@ -814,13 +830,17 @@ def flattenKmerMap(kMap, window=1, seqLen=1, kmin=1, kmax=5, prop=False):
     else:
         return	(float(window)/seqLen) * np.array(kCounts)
 
-def pcaAxisLabels(pca_X, kmin=1, kmax=6):
+def pcaAxisLabels(pca_X, kmin=1, kmax=6, pcaMap=None):
     'Generate axis labels for PCA. Format: "PC1: AT (90.01%)"'
-    blankmap 	= rangeMaps(kmin, kmax)
+    if pcaMap:
+        blankMap = pcaMap
+    else:
+        logging.info('WARNING: Demirrored PCA count map not found. Using raw map.')
+        blankmap = rangeMaps(kmin, kmax)
     keylist 	= []
     axisLabels 	= []
     idx 		= 0 # Principle Component index
-    for x in blankmap:
+    for x in pcaMap:
         for y in x.keys():
             keylist.append(y)
     for x in pca_X.explained_variance_ratio_:
@@ -846,10 +866,10 @@ def makeScatter_X_logKLD(df=None, Xcol=None ,ax=None):
                 xy=(.65, .03), xycoords=ax.transAxes, fontsize='xx-small')
     return sp
 
-def makeScatter(Y, args, pdf, pca_X=None, y_pred=None, centroids=None):
+def makeScatter(Y, args, pdf, pca_X=None, y_pred=None, centroids=None, pcaMap=None):
     if not args.cluster:
         if pca_X:
-            axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
+            axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax, pcaMap=pcaMap)
             sns.set(color_codes=True, style="ticks")
             fig1, ax1 = plt.subplots()
             header = fig1.suptitle(str(args.runProjection) + ': Dimensionality reduction on anomaly-region kmer counts')
@@ -931,7 +951,7 @@ def makeScatter(Y, args, pdf, pca_X=None, y_pred=None, centroids=None):
         header.set_y(0.95)
 
         if pca_X:
-            axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax)
+            axisLabels = pcaAxisLabels(pca_X, kmin=args.pcaMin, kmax=args.pcaMax, pcaMap=pcaMap)
             ax1.set_xlabel(axisLabels[0])
             ax1.set_ylabel(axisLabels[1])
 
@@ -1339,6 +1359,7 @@ def mainArgs():
                         type=int,
                         default=2,
                         help='Set number of clusters for k-means or spectral clustering methods.')
+    # Seed setting not implemented
     parser.add_argument('--seed',
                         default=None,
                         help='Set random number seed for use in decomposition and clustering.')
@@ -1386,7 +1407,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format=("%(asctime)s - %(funcName)s - %(message)s"))
     args = mainArgs()
     print('frisk --', FRISK_VERSION)
-    
+
     # Make path to store genome kmer calculations
     genomepickle 	= makePicklePath(args, space='genome')
     # Make path to store window KLD calculations
@@ -1433,6 +1454,9 @@ def main():
     if os.path.isfile(windowsPickle) and args.recalcWin:
         logging.info('Importing previously calculated window KLD scores from: %s' % windowsPickle)
         allWindows = pickle.load(open(windowsPickle, "rb"))
+        # Note: Temp fix while testing. Remove in future releases
+        if not 'windowKLD' in allWindows.columns:
+            allWindows['windowKLD'] = allWindows['windowKLI']
     else:
         # Initialise textfile output
         out     = args.outfile
@@ -1545,15 +1569,17 @@ def main():
 
         # Remake blankMap for pca kmer range, accounts for difference from genome survey kmer range
         pcaBlankMap = rangeMaps(args.pcaMin, args.pcaMax)
-
+        
         for name, target in anomSeqs:
             logging.info('Computing kmers in %s' % str(name))
             # Symetrical counting of kmers
             countMap 	= computeKmers(args,genomepickle=None, window=[(name, target)], 
                                             genomeMode=False, pcaMode=True, kmerMap=pcaBlankMap, 
                                             getMeta=False, sym=True)
+            # Scrub redundant kmer values after symetrical counting i.e. 'GC=GC, AA=TT, TG=CA'
+            uniqKcountMaps = scrubMirrors(countMap)
             # Flatten kmer count dictionary to 1D array, and make counts proportional within each kmer length class
-            sclCounts	= flattenKmerMap(countMap, window=args.windowlen, 
+            sclCounts	= flattenKmerMap(uniqKcountMaps, window=args.windowlen, 
                                             seqLen=len(target), kmin=args.pcaMin, 
                                             kmax=args.pcaMax, prop=True)
             if counter >= 1:
@@ -1588,7 +1614,7 @@ def main():
                                 metric='euclidean', 
                                 init=args.tsneInitPCA, 
                                 verbose=0, 
-                                random_state=args.seed, 
+                                random_state=None, 
                                 method=args.tsneGradient,
                                 angle=0.5)
             np.set_printoptions(suppress=True)
@@ -1597,7 +1623,7 @@ def main():
             Y = tsne.tsne(X=anomCounts, no_dims=args.projectionDims, initial_dims=50, perplexity=args.perplexity)
         elif args.runProjection == 'MDS':
             MDS_model = MDS(    n_components=args.projectionDims, metric=True, n_init=5, max_iter=500, verbose=0, \
-                                eps=0.001, n_jobs=1, random_state=args.seed, dissimilarity='euclidean')
+                                eps=0.001, n_jobs=1, random_state=None, dissimilarity='euclidean')
             Y = MDS_model.fit_transform(anomCounts)
         elif args.runProjection == 'IncrementalPCA':
             IncrementalPCA_model = IncrementalPCA(n_components=args.projectionDims, whiten=False, copy=True, batch_size=None)
@@ -1605,7 +1631,7 @@ def main():
             Y = IncrementalPCA_model.fit(anomCounts).transform(anomCounts)
         elif args.runProjection == 'NMF':
             NMF_model = NMF(    n_components=args.projectionDims, init=None, solver='cd', tol=0.0001, max_iter=200, \
-                                random_state=args.seed, alpha=0.0, l1_ratio=0.0, verbose=0, shuffle=False, \
+                                random_state=None, alpha=0.0, l1_ratio=0.0, verbose=0, shuffle=False, \
                                 nls_max_iter=2000, sparseness=None, beta=1, eta=0.1)
             Y = NMF_model.fit(anomCounts).transform(anomCounts)
         # Run clustering. Optional.
@@ -1620,7 +1646,7 @@ def main():
         elif args.cluster == 'KMEANS':
             kmeansClust = KMeans(n_clusters=args.kClusters, init='k-means++', n_init=20, max_iter=500, 
                                 tol=0.0001, precompute_distances='auto', verbose=0, 
-                                random_state=args.seed, copy_x=True, n_jobs=1).fit(Y)
+                                random_state=None, copy_x=True, n_jobs=1).fit(Y)
             if hasattr(kmeansClust, 'labels_'):
                 y_pred = kmeansClust.labels_.astype(np.int)
             else:
@@ -1630,7 +1656,7 @@ def main():
             else:
                 k_cluster_centers = y_pred.cluster_centers_
         elif args.cluster == 'SPECTRAL':
-            y_pred = Spectral(n_clusters=args.kClusters, eigen_solver=None, random_state=args.seed, 
+            y_pred = Spectral(n_clusters=args.kClusters, eigen_solver=None, random_state=None, 
                                 n_init=20, gamma=1.0, affinity='rbf', n_neighbors=10, 
                                 eigen_tol=0.0, assign_labels='kmeans', degree=3, 
                                 coef0=1, kernel_params=None).fit_predict(Y)
@@ -1661,9 +1687,9 @@ def main():
                     handle.write(i)
         if args.cluster:
             if args.kClusters:
-                clustMethodTag = '_'.join((args.cluster,'k', str(args.kClusters), 'cluster_labeled', args.dimReduce))
+                clustMethodTag = '_'.join((args.runProjection, args.cluster,'k', str(args.kClusters), 'cluster_labeled', args.dimReduce))
             else:
-                clustMethodTag = '_'.join((args.cluster, 'cluster_labeled', args.dimReduce))
+                clustMethodTag = '_'.join((args.runProjection, args.cluster, 'cluster_labeled', args.dimReduce))
             with open(os.path.join(args.tempDir, clustMethodTag + '_' + args.gffOutfile), "w") as handle:
                 clusteredAnoms = cluster2df(Y, labels=anomLabels, y_pred=y_pred)
                 for i in anomClust2gff(clusteredAnoms):
@@ -1774,10 +1800,10 @@ def main():
 
             # Compose Dim reduction scatterplot
             if args.runProjection:
-                makeScatter(Y, args, pdf, pca_X=pca_X, y_pred=y_pred, centroids=k_cluster_centers)
+                makeScatter(Y, args, pdf, pca_X=pca_X, y_pred=y_pred, centroids=k_cluster_centers, pcaMap=scrubMirrors(pcaBlankMap))
                 
             if (args.RIP) and (args.minWordSize <= 2):
-                if os.path.isdir(os.path.join(args.tempDir, args.RIPgff)):
+                if os.path.isfile(os.path.join(args.tempDir, args.RIPgff)):
                     chrTitle = 'Chromosome painting: Anomalies with RIP annotation track'
                     makeChrPainting(selfGenome, anomalies, chrmlist=args.chrmlist, gffIn=os.path.join(args.tempDir, args.RIPgff), 
                                     gffFeatures='RIP', title=chrTitle, 
@@ -1823,4 +1849,3 @@ def main():
 
     # Trace
     logging.info('Finished!')
-os.path.isdir()
