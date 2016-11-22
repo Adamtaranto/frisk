@@ -26,7 +26,11 @@ def kli(genome_ivom, window_ivom):
     w = window_ivom.astype(np.float)
     g = genome_ivom.astype(np.float)
 
-    #kli = [w[i] * log2(w[i] / g[i]) for i in len(w) if g[i] > 0 and w[i] > 0]
+    # kli = [w[i] * log2(w[i] / g[i]) for i in len(w) if g[i] > 0 and w[i] > 0]
+
+    # Set w[i] := 0 iff g[i] == 0
+
+    w /= w.sum()
 
     kli = w * np.log2(w / g)
     # nansum sums over non-NAN values. NaN values are introduced by div by zero
