@@ -4,7 +4,7 @@ nose
 numpy
 pandas
 pybedtools
-pymer
+pymer>=0.2.1
 scikit-learn
 scipy
 seaborn

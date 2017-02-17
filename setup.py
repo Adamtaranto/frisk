@@ -31,7 +31,7 @@ install_requires = [
     "pysam>=0.9.0",
     "pybedtools>=0.7.6",
     "scikit-learn>=0.17.1",
-    "pymer>=0.2",
+    "pymer>=0.2.1",
 ]
 
 test_requires = [
