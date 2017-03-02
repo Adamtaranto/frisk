@@ -5,11 +5,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from sys import stdin, stdout, stderr, exit
 import argparse
 
-from ._version import get_versions
-__version__ = get_versions()['version']
-del get_versions
+import numpy as np
+
+import frisk
+from .metrics import (
+    CREAnomalyDetector,
+)
+from .log import CLI_LOG as LOG
+from .funcs import write_bed
 
 
 def kli_args():
@@ -19,50 +25,32 @@ def kli_args():
     )
 
     p.add_argument(
-        "-V,--version",
-        action="version",
-        version="frisk -- version {}".format(__version__)
+        "-V", "--version", action="version",
+        version="frisk -- version {}".format(frisk.__version__)
     )
     p.add_argument(
-        "-s,--self-genome",
-        type=str,
-        required=True,
+        "-s", "--self-genome", type=str, required=True,
         help="The input self genome sequences (as FASTA)"
     )
     p.add_argument(
-        "-n,--non-self-genome",
-        type=str,
-        required=False,
+        "-n", "--non-self-genome", type=str, required=False,
         help="The input non-self genome sequences (as FASTA)"
     )
     p.add_argument(
-        "-o,--outfile",
-        type=str,
+        "-o", "--outfile", type=str,
         help="Write KLD bed track to this file",
     )
     p.add_argument(
-        "-k,--kmer-size",
-        type=int,
-        default=4,
+        "-k", "--kmer-size", type=int, default=4,
         help="Length of k-mers",
     )
     p.add_argument(
-        "-w,--window-size",
-        type=int,
-        default=5000,
+        "-w", "--window-size", type=int, default=5000,
         help="Length of genome sequence windows",
     )
-
-    mode = p.add_mutually_exclusive_group()
-    mode.add_argument(
-        "-C,--cre",
-        action="store_true",
-        help="Use the Conditional Relative Entropy measure"
-    )
-    mode.add_argument(
-        "-I,--ivom",
-        action="store_true",
-        help="Use the Conditional Relative Entropy measure"
+    p.add_argument(
+        "-m", "--mode", choices=("CRE", "IVOM"), default="CRE",
+        help="KLI Calculation mode to use"
     )
 
     args = p.parse_args()
@@ -71,4 +59,26 @@ def kli_args():
 
 def kli_main():
     args = kli_args()
-    return args
+    self_file = args.self_genome
+    nonself_file= args.self_genome  # FIXME: args.non_self_genome if supplied
+
+    # Instantiate kli calculator
+    calc_classes = {
+        "CRE": CREAnomalyDetector,
+        "IVOM": NotImplementedError,
+    }
+    klicalc = calc_classes[args.mode](args.kmer_size, window_size=args.window_size)
+
+    LOG.info("Loading \"self\" genome")
+    klicalc.load_genome_file(self_file)
+    LOG.info("\"Self\" genome loaded")
+
+    LOG.info("Calculating window scores")
+    with open(args.outfile, "w") as bedfh:
+        for i, window in enumerate(klicalc.window_scores_file(nonself_file)):
+            write_bed(bedfh, *window)
+            if i % 100000 == 0:
+                LOG.info("Processed {} windows".format(i))
+        LOG.info("Done, processed {} windows".format(i))
+
+    LOG.info("Finished")

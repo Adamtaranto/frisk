@@ -13,7 +13,10 @@ This module implements two Anomaly Detection algorithms: CRE and IVOM.
 import pymer
 import numpy as np
 
-from .funcs import each_window
+from .funcs import each_window, each_seqeunce
+
+# Ignore floating point errors, as we use nansum
+np.seterr(all="ignore")
 
 
 class BaseCalc(object):
@@ -43,11 +46,16 @@ class BaseCalc(object):
     def window_score(self, window):
         return 0
 
-    def window_scores(self, seq):
-        scores = []
-        for window in each_window(seq, self.window_size, self.window_overlap):
-            scores.append(self.window_score(window))
-        return scores
+    def window_scores_seq(self, seq):
+        for start, stop, window in each_window(seq, size=self.window_size,
+                                               offset=self.window_overlap,
+                                               coordinates=True):
+            yield (start, stop, self.window_score(window))
+
+    def window_scores_file(self, filename):
+        for seq in each_seqeunce(filename):
+            for s, e, w in self.window_scores_seq(seq.sequence):
+                yield (seq.name, s, e, w)
 
 
 class CREAnomalyDetector(BaseCalc):

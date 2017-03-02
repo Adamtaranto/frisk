@@ -22,6 +22,7 @@ frisk: Detection of sequence composition anomalies using multiple order kmers.
 """
 
 install_requires = [
+    "coloredlogs",
     "numpy>=1.10",
     "scipy>=0.17",
     "pandas>=0.17",
@@ -65,7 +66,8 @@ setup(
     classifiers=pypi_classifiers,
     entry_points={
         'console_scripts': [
-            'frisk=frisk:main',
+            'frisk-legacy=frisk.legacy:main',
+            'frisk-kli=frisk.cli:kli_main',
         ],
     },
 )

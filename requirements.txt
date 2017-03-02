@@ -1,3 +1,4 @@
+coloredlogs
 hmmlearn
 matplotlib
 nose

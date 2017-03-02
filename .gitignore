@@ -65,8 +65,10 @@ target/
 #Testing stuff
 gh-pages/
 data/
+!frisk/tests/data/
 temp/
 temp*/
 sandpit/
 ./sandpit
 paper/
+*.bed

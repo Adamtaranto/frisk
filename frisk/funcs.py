@@ -5,14 +5,26 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import screed
+
 
 def each_window(seq, size=5000, offset=0.5, coordinates=False):
     # FIXME: Make this deal with the leftovers at the end
-    # FIXME: return coordinates if cordinates == True
     if offset < 1:
         offset *= size
     offset = int(offset)
     for start in range(0, len(seq), offset):
         if start + size + offset > len(seq):
             size = len(seq) - start
-        yield seq[start:start+size]
+        if coordinates:
+            yield start, start+size, seq[start:start+size]
+        else:
+            yield seq[start:start+size]
+
+
+def each_seqeunce(seqfile):
+    yield from iter(screed.open(seqfile))
+
+
+def write_bed(file, seq, start, end, score):
+    print(seq, start+1, end, score, sep='\t', file=file)
