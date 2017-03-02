@@ -67,7 +67,7 @@ setup(
     entry_points={
         'console_scripts': [
             'frisk-legacy=frisk.legacy:main',
-            'frisk-kli=frisk.cli:kli_main',
+            'frisk-kld=frisk.cli:kld_main',
         ],
     },
 )

@@ -18,10 +18,10 @@ from .log import CLI_LOG as LOG
 from .funcs import write_bed
 
 
-def kli_args():
+def kld_args():
     p = argparse.ArgumentParser(
         description="Calculate KLD between genome windows and the whole genome",
-        prog="frisk-kli",
+        prog="frisk-kld",
     )
 
     p.add_argument(
@@ -50,32 +50,32 @@ def kli_args():
     )
     p.add_argument(
         "-m", "--mode", choices=("CRE", "IVOM"), default="CRE",
-        help="KLI Calculation mode to use"
+        help="KLD Calculation mode to use"
     )
 
     args = p.parse_args()
     return args
 
 
-def kli_main():
-    args = kli_args()
+def kld_main():
+    args = kld_args()
     self_file = args.self_genome
     nonself_file= args.self_genome  # FIXME: args.non_self_genome if supplied
 
-    # Instantiate kli calculator
+    # Instantiate kld calculator
     calc_classes = {
         "CRE": CREAnomalyDetector,
         "IVOM": NotImplementedError,
     }
-    klicalc = calc_classes[args.mode](args.kmer_size, window_size=args.window_size)
+    kldcalc = calc_classes[args.mode](args.kmer_size, window_size=args.window_size)
 
     LOG.info("Loading \"self\" genome")
-    klicalc.load_genome_file(self_file)
+    kldcalc.load_genome_file(self_file)
     LOG.info("\"Self\" genome loaded")
 
     LOG.info("Calculating window scores")
     with open(args.outfile, "w") as bedfh:
-        for i, window in enumerate(klicalc.window_scores_file(nonself_file)):
+        for i, window in enumerate(kldcalc.window_scores_file(nonself_file)):
             write_bed(bedfh, *window)
             if i % 100000 == 0:
                 LOG.info("Processed {} windows".format(i))
