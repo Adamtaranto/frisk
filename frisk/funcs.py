@@ -24,7 +24,3 @@ def each_window(seq, size=5000, offset=0.5, coordinates=False):
 
 def each_seqeunce(seqfile):
     yield from iter(screed.open(seqfile))
-
-
-def write_bed(file, seq, start, end, score):
-    print(seq, start+1, end, score, sep='\t', file=file)

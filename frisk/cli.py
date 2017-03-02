@@ -14,8 +14,10 @@ import frisk
 from .metrics import (
     CREAnomalyDetector,
 )
-from .log import CLI_LOG as LOG
-from .funcs import write_bed
+from .log import cli_log
+
+
+LOG = cli_log()
 
 
 def kld_args():
@@ -60,9 +62,9 @@ def kld_args():
 def kld_main():
     args = kld_args()
     self_file = args.self_genome
-    nonself_file= args.self_genome  # FIXME: args.non_self_genome if supplied
+    nonself_file = args.self_genome  # FIXME: args.non_self_genome if supplied
 
-    # Instantiate kld calculator
+    # Instantiate KLD calculator
     calc_classes = {
         "CRE": CREAnomalyDetector,
         "IVOM": NotImplementedError,
@@ -76,9 +78,9 @@ def kld_main():
     LOG.info("Calculating window scores")
     with open(args.outfile, "w") as bedfh:
         for i, window in enumerate(kldcalc.window_scores_file(nonself_file)):
-            write_bed(bedfh, *window)
+            print(*window, sep='\t', file=bedfh)
             if i % 100000 == 0:
-                LOG.info("Processed {} windows".format(i))
-        LOG.info("Done, processed {} windows".format(i))
+                LOG.info("Processed %d windows", i)
+        LOG.info("Done, processed %d windows", i)
 
     LOG.info("Finished")
