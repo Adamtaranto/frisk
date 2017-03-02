@@ -1,38 +1,18 @@
-import numpy as np
+# Copyright (c) 2017 Kevin Murray <kdmfoss@gmail.com>
+# Copyright (c) 2017 Adam Taranto
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-def kmer_freqs(kmer_counts):
-    '''Turn kmer count dict into freqs'''
-    kmer_freqs = {}
-    for k in kmer_counts:
-        kc = kmer_counts[k].astype(np.float)
-        kmer_freqs[k] = kc / kc.sum()
-    return kmer_freqs
-
-
-def build_kmer_vec(min_k, max_k, dtype=np.uint64, alphabet="ACGT"):
-    """Creates a dictionary of k-mer count vectors
-
-    The dictionary returned is of the form {1: np.ndarray(), 2: np.ndarray()}.
-    """
-    kmer_vecs = {}
-    for k in range(min_k, max_k + 1):
-        n_kmers = len(alphabet) ** k
-        kmer_vecs[k] = np.zeros(n_kmers, dtype=dtype)
-    return kmer_vecs
-
-
-def kli(genome_ivom, window_ivom):
-    w = window_ivom.astype(np.float)
-    g = genome_ivom.astype(np.float)
-
-    # kli = [w[i] * log2(w[i] / g[i]) for i in len(w) if g[i] > 0 and w[i] > 0]
-
-    # Set w[i] := 0 iff g[i] == 0
-
-    w /= w.sum()
-
-    kli = w * np.log2(w / g)
-    # nansum sums over non-NAN values. NaN values are introduced by div by zero
-    # in the above kli score calculation. This is the same as skipping
-    return np.nansum(kli)
+def each_window(seq, size=5000, offset=0.5, coordinates=False):
+    # FIXME: Make this deal with the leftovers at the end
+    # FIXME: return coordinates if cordinates == True
+    if offset < 1:
+        offset *= size
+    offset = int(offset)
+    for start in range(0, len(seq), offset):
+        if start + size + offset > len(seq):
+            size = len(seq) - start
+        yield seq[start:start+size]
