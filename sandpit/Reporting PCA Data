@@ -1,0 +1,15 @@
+#Reporting PCA Data
+- Cluster on 3D data (DBScan, k-means, knn)
+- Project axis combin ations in 2D space 
+			PC1			PC2			PC3
+
+	PC1		XXX			PC1_PC2		PC1_PC3
+
+	PC2		PC1_PC2		XXX			PC2_PC3
+
+	PC3		PC1_PC3		PC2_PC3		XXX
+-Explained variance ratio (Eigenvalue) per Principle Component (eigenvector = identity)
+loadings
+
+- Component loadings # http://grimbeek.com.au/Papers/Factor%20analysis%20reporting.pdf
+For variables scoring above thresh (0.1) across all factors (PCx from FA)

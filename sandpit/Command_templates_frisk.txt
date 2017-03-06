@@ -1,0 +1,345 @@
+#Parastagonospora nodorum SN15
+frisk --hostSeq data/SN15v6.fasta \
+--outfile 5000_2500_IVOM_classic_SN15v6.bed \
+--scaffoldsAll \
+--minWordSize 1 \
+--maxWordSize 8 \
+--windowlen 5000 \
+--increment 2500 \
+--tempDir temp \
+--dimReduce features \
+--runProjection PCA \
+--culster DBSCAN \
+--epsDBSCAN 0.01 \
+--pcaMin 1 \
+--pcaMax 6 \
+--RIP \
+--minCRI 1 \
+--peakCRI 1.5 \
+--minPI 1 \
+--maxSI 1 \
+--hmmKLI \
+--threshTypeKLI percentile \
+--percentileKLI 90 \
+--gffOutfile 5000_2500_SN15_All_Anomalies.gff3 \
+--gffIn data/SN15v6.gff3 \
+--gffFeatures gene \
+--graphics PCA_onfeatures_5000_2500_SN15_outgraphics.pdf
+
+#Plasmodium
+python -m frisk --hostSeq data/PlasmoDB-26_Pfalciparum3D7_Genome.fasta \
+--outfile 5000_2500_PF3D7.bed \
+--scaffoldsAll \
+--minWordSize 1 \
+--maxWordSize 8 \
+--windowlen 5000 \
+--increment 2500 \
+--tempDir temp \
+--dimReduce features \
+--runProjection PCA \
+--culster DBSCAN \
+--epsDBSCAN 0.01 \
+--pcaMin 1 \
+--pcaMax 6 \
+--hmmKLI \
+--hmmOutfile PF3D7_2StateHmm.gff3 \
+--threshTypeKLI percentile \
+--percentileKLI 95 \
+--gffOutfile PF3D7_5000_2500_All_Anomalies.gff3 \
+--gffIn data/PlasmoDB-26_Pfalciparum3D7.gff \
+--gffFeatures gene \
+--graphics PF3D7_PCA_on95Percentile_Features_5000_2500_outgraphics.pdf
+
+#Zymo
+python -m frisk --hostSeq data/fungi/Zymoseptoria_tritici_scaffolds.fa \
+--outfile Zymo_ipo323.bed \
+--scaffoldsAll \
+--minWordSize 1 \
+--maxWordSize 8 \
+--windowlen 5000 \
+--increment 2500 \
+--tempDir temp \
+--dimReduce features \
+--runProjection PCA \
+--culster DBSCAN \
+--epsDBSCAN 0.01 \
+--pcaMin 1 \
+--pcaMax 6 \
+--RIP \
+--minCRI 0 \
+--peakCRI 1.0 \
+--minPI 1 \
+--maxSI 1 \
+--hmmKLI \
+--threshTypeKLI percentile \
+--percentileKLI 90 \
+--gffOutfile Zymo_ipo323_p90_5000_2500_All_Anomalies.gff3 \
+
+#Zymo map with TEs
+python -m frisk --hostSeq data/fungi/Zymoseptoria_tritici_scaffolds.fa \
+--minWordSize 1 \
+--maxWordSize 8 \
+--windowlen 5000 \
+--increment 2500 \
+--tempDir temp \
+--dimReduce features \
+--runProjection PCA \
+--culster DBSCAN \
+--epsDBSCAN 0.01 \
+--pcaMin 1 \
+--pcaMax 6 \
+--threshTypeKLI percentile \
+--percentileKLI 85 \
+--gffOutfile Zymo_ipo323_p85_5000_2500_All_Anomalies.gff3 \
+--gffIn data/fungi/Zymo_master_TEset.gff3 \
+--gffFeatures zymo_REPET_TEs \
+--graphics Zymo_ipo323_p85_PCA_onfeatures_5000_2500_outgraphics.pdf
+
+#Triticum aestivum like sequence in Parastagonospora nodorum SN15
+python -m frisk --querySeq data/SN15v6.fasta \
+--hostSeq data/Triticum_aestivum.IWGSC1.0+popseq.29.cdna.all.fa \
+--outfile Ta_vs_SN15v6_5000_2500.bed \
+--scaffoldsAll \
+--findSelf \
+--minWordSize 1 \
+--maxWordSize 8 \
+--windowlen 5000 \
+--increment 2500 \
+--tempDir temp \
+--dimReduce features \
+--runProjection PCA \
+--culster DBSCAN \
+--epsDBSCAN 0.01 \
+--pcaMin 1 \
+--pcaMax 6 \
+--hmmKLI \
+--threshTypeKLI percentile \
+--percentileKLI 1 \
+--gffOutfile Ta_vs_SN15v6_Wheat_like_segs.gff3 \
+--gffIn data/SN15v6.gff3 \
+--gffFeatures gene \
+--graphics Ta_vs_SN15v6_5000_2500_graphics.pdf
+
+
+#Triticum aestivum like sequence in Zymo IPO323
+python -m frisk --querySeq data/fungi/Zymoseptoria_tritici_scaffolds.fa \
+--hostSeq data/Triticum_aestivum.IWGSC1.0+popseq.29.cdna.all.fa \
+--outfile Ta_vs_Zymo_IPO323_5000_2500.bed \
+--scaffoldsAll \
+--findSelf \
+--minWordSize 1 \
+--maxWordSize 8 \
+--windowlen 5000 \
+--increment 2500 \
+--tempDir temp \
+--dimReduce features \
+--runProjection PCA \
+--culster DBSCAN \
+--epsDBSCAN 0.01 \
+--pcaMin 1 \
+--pcaMax 6 \
+--hmmKLI \
+--threshTypeKLI percentile \
+--percentileKLI 1 \
+--gffOutfile Ta_vs_Zymo_IPO323_Wheat_like_segs.gff3 \
+--gffIn data/fungi/Zymo_mod_genes.gff3 \
+--gffFeatures gene \
+--graphics Ta_Vs_Zymo_ipo323_p01_PCA_onfeatures_5000_2500_outgraphics.pdf
+
+#Sphaerulina_musiva_so2202
+python -m frisk --hostSeq data/fungi/Sphaerulina_musiva_so2202.GCA_000320565.2.29.dna.genome.fa \
+--outfile Sphaerulina_musiva_so2202_5000_2500.bed \
+--scaffoldsAll \
+--minWordSize 1 \
+--maxWordSize 8 \
+--windowlen 5000 \
+--increment 2500 \
+--tempDir temp \
+--dimReduce features \
+--runProjection PCA \
+--culster DBSCAN \
+--epsDBSCAN 0.01 \
+--pcaMin 1 \
+--pcaMax 6 \
+--RIP \
+--minCRI 0 \
+--peakCRI 1.0 \
+--minPI 1 \
+--maxSI 1 \
+--hmmKLI \
+--threshTypeKLI percentile \
+--percentileKLI 90 \
+--gffOutfile Sphaerulina_musiva_so2202_5000_2500_All_Anomalies.gff3 \
+--gffIn data/fungi/Sphaerulina_musiva_so2202.GCA_000320565.2.29.gff3 \
+--gffFeatures gene \
+--graphics Sphaerulina_musiva_so2202_PCA_onfeatures_5000_2500_graphics.pdf
+
+#############
+M. fijiensis tests
+
+#### M. fijiensis vs Zymo IPO323
+
+#M. fijiensis vs self
+python -m frisk --hostSeq data/fungi/Mycfi2/Mycosphaerella_fijiensis_v2.allmasked_clone.fa \
+--outfile Mycosphaerella_fijiensis_5000_2500.bed \
+--scaffoldsAll \
+--minWordSize 1 \
+--maxWordSize 8 \
+--windowlen 5000 \
+--increment 2500 \
+--tempDir temp/fijiensis/fijiensis_self \
+--RIP \
+--minCRI 1 \
+--peakCRI 1.5 \
+--minPI 1 \
+--maxSI 1 \
+--threshTypeKLI percentile \
+--percentileKLI 90 \
+--gffOutfile Mycosphaerella_fijiensis_self_anoms.gff3 \
+--graphics Mycosphaerella_fijiensis_p90_PCA_onfeatures_5000_2500_graphics.pdf
+
+#M. fijiensis vs Zymo
+python -m frisk --querySeq data/fungi/Mycfi2/Mycosphaerella_fijiensis_v2.allmasked \
+--hostSeq data/fungi/Zymoseptoria_tritici_scaffolds.fa \
+--outfile fijiensis_vs_Zymo_IPO323_5000_2500.bed \
+--scaffoldsAll \
+--minWordSize 1 \
+--maxWordSize 8 \
+--windowlen 5000 \
+--increment 2500 \
+--tempDir temp/fijiensis/fijiensis_zymo \
+--dimReduce features \
+--runProjection PCA \
+--pcaMin 1 \
+--pcaMax 6 \
+--hmmKLI \
+--hmmOutfile hmm_fijiensis_vs_zymo.gff3 \
+--forceThresholdKLI 0.08 \
+--gffOutfile fijiensis_vs_Zymo_IPO323.gff3 \
+--gffIn data/fungi/Mycfi2/Mycfi2.filtered_proteins.FrozenGeneCatalog_20100402.gff3 \
+--gffFeatures gene \
+--graphics fijiensis_Vs_Zymo_ipo323_PCA_onfeatures_5000_2500_graphics.pdf
+
+#fijiensis_vs_musiva
+python -m frisk --hostSeq data/fungi/Sphaerulina_musiva_so2202.GCA_000320565.2.29.dna.genome.fa \
+--querySeq data/fungi/Mycfi2/Mycosphaerella_fijiensis_v2.allmasked \
+--outfile fijiensis_vs_Musiva_5000_2500.bed \
+--scaffoldsAll \
+--minWordSize 1 \
+--maxWordSize 8 \
+--windowlen 5000 \
+--increment 2500 \
+--tempDir temp/fijiensis/fijiensis_musiva \
+--dimReduce features \
+--runProjection PCA \
+--culster DBSCAN \
+--epsDBSCAN 0.01 \
+--pcaMin 1 \
+--pcaMax 6 \
+--hmmKLI \
+--hmmOutfile hmm_fijiensis_vs_musiva.gff3 \
+--forceThresholdKLI 0.08 \
+--gffOutfile fijiensis_vs_musiva.gff3 \
+--gffIn data/fungi/Mycfi2/Mycfi2.filtered_proteins.FrozenGeneCatalog_20100402.gff3 \
+--gffFeatures gene \
+--graphics fijiensis_Vs_musiva_PCA_onfeatures_5000_2500_graphics.pdf
+
+
+#Xantho
+python -m frisk --hostSeq data/bacteria/XAC_Core_Genome_AE008923.fa \
+--outfile XAC_rawTrack.bed \
+--gffIn data/bacteria/XAC_annotations.gff \
+--gffFeatures gene CDS \
+--scaffoldsAll \
+--minWordSize 1 \
+--maxWordSize 8 \
+--windowlen 5000 \
+--increment 2500 \
+--tempDir temp \
+--gffRange 1000 \
+--gffOutfile XAC_All_Anomalies.gff3 \
+--mergeDist 0 \
+--threshType percentile \
+--percentileKLI 95.0 \
+--dimReduce features \
+--runProjection PCA \
+--culster DBSCAN \
+--epsDBSCAN 0.01 \
+--pcaMin 1 \
+--pcaMax 6 \
+--RIP \
+--minCRI 1 \
+--peakCRI 1.5 \
+--minPI 1 \
+--maxSI 1 \
+--hmmKLI \
+--graphics XAC_outgraphics.pdf
+
+#HaOGS2
+python -m frisk --hostSeq data/metazoa/csiro4b-r-04-04-2015.fas \
+--outfile HaOGS2_raw.bed \
+--hmmOutfile HaOGS2_2StateHmm.gff3 \
+--gffIn data/metazoa/HaOGS2-17089_fixed_7-04-15_note-added.gff3 \
+--gffOutfile HaOGS2_5000_2500_All_Anomalies.gff3 \
+--graphics HaOGS2_PCA_on95Percentile_Features_5000_2500_outgraphics.pdf \
+--gffFeatures gene \
+--scaffoldsAll \
+--minWordSize 1 \
+--maxWordSize 8 \
+--windowlen 5000 \
+--increment 2500 \
+--tempDir temp \
+--dimReduce features \
+--runProjection PCA \
+--pcaMin 1 \
+--pcaMax 6 \
+--hmmKLI \
+--threshTypeKLI percentile \
+--percentileKLI 95
+
+#hz5p5
+python -m frisk --hostSeq data/metazoa/hz5p5.fas \
+--outfile hz5p5_raw.bed \
+--hmmOutfile hz5p5_2StateHmm.gff3 \
+--gffIn data/metazoa/HzOG-combined-final-good-plus-HaOGS2_hz5p4-repaired-sorted.gff3 \
+--gffOutfile hz5p5_5000_2500_All_Anomalies.gff3 \
+--graphics hz5p5_PCA_on95Percentile_Features_5000_2500_outgraphics.pdf \
+--gffFeatures gene \
+--scaffoldsAll \
+--minWordSize 1 \
+--maxWordSize 8 \
+--windowlen 5000 \
+--increment 2500 \
+--tempDir temp \
+--dimReduce features \
+--runProjection PCA \
+--pcaMin 1 \
+--pcaMax 6 \
+--hmmKLI \
+--threshTypeKLI percentile \
+--percentileKLI 95
+
+#P. pacificus
+pacificus_Hybrid1_genes.gff3
+Pristionchus_Hybrid_assembly.fa
+python -m frisk --hostSeq data/metazoa/Pristionchus_Hybrid_assembly.fa \
+--outfile Pristionchus_pacificus_raw.bed \
+--hmmOutfile Pristionchus_pacificus_2StateHmm.gff3 \
+--gffIn data/metazoa/pacificus_Hybrid1_genes.gff3 \
+--gffOutfile Pristionchus_pacificus_5000_2500_All_Anomalies.gff3 \
+--graphics Pristionchus_pacificus_PCA_on95Percentile_Features_5000_2500_outgraphics.pdf \
+--gffFeatures gene \
+--scaffoldsAll \
+--minWordSize 1 \
+--maxWordSize 8 \
+--windowlen 5000 \
+--increment 2500 \
+--tempDir temp \
+--dimReduce features \
+--runProjection PCA \
+--pcaMin 1 \
+--pcaMax 6 \
+--hmmKLI \
+--threshTypeKLI percentile \
+--percentileKLI 95
+

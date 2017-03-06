@@ -1,0 +1,23 @@
+#Frisk TIC
+Count Kmers
+Sample windows 
+Kmer probability >> kmer weight >> integrated probability score
+	Worked example of internal probabilities compensating for sparse 8mer signal
+	i.e. (sparse + high information, dense + high noise) = (trade off between sensitivity and specificity) = (True anomalies + missed small features, small feature sensitivity vs high false positive)
+Probability of finding in window + Probability of sampling in genome
+Sum probability for window (self, genome)
+Calculate entropy between local sample and genome probability. [alternate entropy calculations]
+
+Threshold Otsu
+Threshold Percentile
+Threshold HMM
+
+Segment anomalies using PCA on counts + Clustering
+	Where n observations < variables, only able to find up to n eigenvectors.
+	Sparse matrix at higher orders
+Characterise Intra-cluster driving kmers
+
+Things found (Viruses, TEs, Mitochondrial genes, SM Clusters, RIP Signal)
+
+Hanging questions [Best methods for driving Kmer detection, P-value on entropy score: Chi-squared vector of kmer-probabilities in window vs genome probabilities? H0 = Obs same, Ha = At least one is different]
+

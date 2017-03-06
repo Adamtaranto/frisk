@@ -1,0 +1,22 @@
+#Upload a new version to Pypi
+git pull
+git tag -s 0.1.10
+git push --tags
+#python setup.py register -r pypi
+python setup.py sdist upload -r pypi
+
+#python setup.py register -r pypitest
+#python setup.py sdist upload -r pypitest
+
+#Setting up a virtual environment
+cd ~/ScienceProjects/frisk/
+virtualenv testenv
+. testenv/bin/activate
+#pip install frisk
+pip install .
+pip install cython numpy scipy 
+pip install hmmlearn scikit-learn
+frisk
+deactivate
+rm -rf testenv/
+
