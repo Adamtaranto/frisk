@@ -1,11 +1,12 @@
-numpy
-scipy
-cython
+coloredlogs
 hmmlearn
 matplotlib
 nose
+numpy
 pandas
 pybedtools
+pymer>=0.2.1
 scikit-learn
+scipy
 seaborn
 six

@@ -49,24 +49,17 @@ nosetests.xml
 coverage.xml
 *,cover
 
-# Translations
-*.mo
-*.pot
-
 # Django stuff:
 *.log
 
-# PyBuilder
-target/
 
 # OSX crud
 .DS_Store
 
 #Testing stuff
-gh-pages/
 data/
+!frisk/tests/data/
 temp/
 temp*/
-sandpit/
-./sandpit
 paper/
+*.bed
